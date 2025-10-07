@@ -107,14 +107,15 @@ export class PQCProvider {
     signData(data, secretKey) {
         const sk = this._ensureUint8Array(secretKey);
         const dataBytes = data instanceof Uint8Array ? data : this.textToBytes(data);
-        return this.signatureScheme.sign(sk, dataBytes);
+        return this.signatureScheme.sign(dataBytes, sk);
     }
 
     verifySignature(signature, data, publicKey) {
         const pubKey = this._ensureUint8Array(publicKey);
         const dataBytes = data instanceof Uint8Array ? data : this.textToBytes(data);
         const sig = this._ensureUint8Array(signature);
-        return this.signatureScheme.verify(pubKey, dataBytes, sig);
+        console.log("lenghts", pubKey.length, dataBytes.length, sig.length);
+        return this.signatureScheme.verify(sig, dataBytes, pubKey);
     }
 
     // ========== Encryptor Creation Methods ==========
@@ -233,6 +234,7 @@ export class PQCProvider {
 
         // Sign the entire outer bundle
         const outerBundleBytes = this.textToBytes(JSON.stringify(outerBundle));
+        console.log("length secret key", keys.teamEdPrivate.length);
         const signature = await this.signData(outerBundleBytes, keys.teamEdPrivate);
 
         return {
@@ -306,7 +308,7 @@ export class PQCProvider {
         if (missingKeys.length > 0) {
             throw new Error(`Missing required team keys: ${missingKeys.join(', ')}`);
         }
-        
+
         return true;
     }
 }
