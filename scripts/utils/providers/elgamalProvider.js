@@ -363,8 +363,200 @@ export class ElGamalCryptoProvider {
     }
 
     // ========== Team Encryptor ==========
-    
-    // Not Yet added
+
+    async createTeamEncryptor(keys) {
+        await this.ensureInitialized();
+
+        try {
+            this.validateTeamKeys(keys);
+
+            // Check if we have the necessary keys for encryption and decryption
+            const canEncrypt = !!(keys.teamCurvePublic && keys.teamEdPrivate);
+            const canDecrypt = !!(keys.teamCurvePrivate && keys.teamEdPublic);
+
+            return {
+                encrypt: async (plain) => {
+                    if (!canEncrypt) {
+                        throw new Error('Team encryptor does not have encryption capability');
+                    }
+
+                    try {
+                        console.log('[ElGamalProvider] Using ElGamal team encryption');
+
+                        // Generate ephemeral key pair for this message
+                        const ephemeralKeyPair = await window.crypto.subtle.generateKey(
+                            { name: "ECDH", namedCurve: "P-256" },
+                            true,
+                            ["deriveBits"]
+                        );
+
+                        // Import team public key for ECDH
+                        const teamPubKey = await this._importECDHPublicKey(keys.teamCurvePublic);
+
+                        // Derive shared secret with team's public key
+                        const sharedSecret = await window.crypto.subtle.deriveBits(
+                            { name: "ECDH", public: teamPubKey },
+                            ephemeralKeyPair.privateKey,
+                            256 // 32 bytes for AES-GCM
+                        );
+
+                        // Create AES key from shared secret
+                        const aesKey = await window.crypto.subtle.importKey(
+                            "raw",
+                            sharedSecret,
+                            { name: "AES-GCM", length: 256 },
+                            false,
+                            ["encrypt"]
+                        );
+
+                        // Prepare data for encryption
+                        const encoder = new TextEncoder();
+                        const dataToEncrypt = typeof plain === 'string' ? encoder.encode(plain) : plain;
+                        const iv = window.crypto.getRandomValues(new Uint8Array(12));
+
+                        // Encrypt with AES-GCM
+                        const ciphertext = await window.crypto.subtle.encrypt(
+                            { name: "AES-GCM", iv: iv },
+                            aesKey,
+                            dataToEncrypt
+                        );
+
+                        // Export ephemeral public key
+                        const ephemeralPubKeyRaw = await window.crypto.subtle.exportKey(
+                            "raw",
+                            ephemeralKeyPair.publicKey
+                        );
+
+                        // Sign the entire message using team's signing key
+                        const signingKey = this.cryptoModule.Nacl.util.decodeBase64(keys.teamEdPrivate);
+                        const messageToSign = this.concatUint8Arrays([
+                            new Uint8Array(ephemeralPubKeyRaw),
+                            iv,
+                            new Uint8Array(ciphertext)
+                        ]);
+                        const signature = this.cryptoModule.Nacl.sign.detached(
+                            messageToSign,
+                            signingKey
+                        );
+
+                        // Create the encrypted message structure
+                        const result = {
+                            version: "elgamal-team-1.0",
+                            ephemeralPublicKey: this.cryptoModule.Nacl.util.encodeBase64(new Uint8Array(ephemeralPubKeyRaw)),
+                            iv: this.cryptoModule.Nacl.util.encodeBase64(iv),
+                            ciphertext: this.cryptoModule.Nacl.util.encodeBase64(new Uint8Array(ciphertext)),
+                            signature: this.cryptoModule.Nacl.util.encodeBase64(signature),
+                            teamPublicKey: keys.teamCurvePublic
+                        };
+
+                        return this.cryptoModule.Nacl.util.encodeBase64(encoder.encode(JSON.stringify(result)));
+                    } catch (err) {
+                        console.error('[ElGamalProvider] Team encryption failed:', err);
+                        throw err;
+                    }
+                },
+
+                decrypt: async (ciphertext, skipValidation = false) => {
+                    if (!canDecrypt) {
+                        throw new Error('Team encryptor does not have decryption capability');
+                    }
+
+                    try {
+                        console.log('[ElGamalProvider] Using ElGamal team decryption');
+
+                        const decoder = new TextDecoder();
+                        const ciphertextBytes = this.cryptoModule.Nacl.util.decodeBase64(ciphertext);
+                        const ciphertextStr = decoder.decode(ciphertextBytes);
+                        const encryptedMessage = JSON.parse(ciphertextStr);
+
+                        if (encryptedMessage.version !== "elgamal-team-1.0") {
+                            throw new Error('Unsupported team encryption version');
+                        }
+
+                        // Extract components
+                        const ephemeralPubKeyBytes = this.cryptoModule.Nacl.util.decodeBase64(encryptedMessage.ephemeralPublicKey);
+                        const iv = this.cryptoModule.Nacl.util.decodeBase64(encryptedMessage.iv);
+                        const encryptedData = this.cryptoModule.Nacl.util.decodeBase64(encryptedMessage.ciphertext);
+                        const signature = this.cryptoModule.Nacl.util.decodeBase64(encryptedMessage.signature);
+
+                        // Verify signature if not skipping validation
+                        if (!skipValidation) {
+                            console.log('[ElGamalProvider] Verifying team signature');
+                            const messageToVerify = this.concatUint8Arrays([
+                                ephemeralPubKeyBytes,
+                                iv,
+                                encryptedData
+                            ]);
+
+                            const teamPublicSigningKey = this.cryptoModule.Nacl.util.decodeBase64(keys.teamEdPublic);
+                            const isValid = this.cryptoModule.Nacl.sign.detached.verify(
+                                messageToVerify,
+                                signature,
+                                teamPublicSigningKey
+                            );
+
+                            if (!isValid) {
+                                throw new Error('Invalid team signature');
+                            }
+                            console.log('[ElGamalProvider] Team signature verification successful');
+                        }
+
+                        // Import ephemeral public key
+                        const ephemeralPubKey = await window.crypto.subtle.importKey(
+                            "raw",
+                            ephemeralPubKeyBytes,
+                            { name: "ECDH", namedCurve: "P-256" },
+                            false,
+                            []
+                        );
+
+                        // Import our team private key
+                        const privateKey = await this._importECDHPrivateKey(keys.teamCurvePrivate);
+
+                        // Derive the same shared secret
+                        const sharedSecret = await window.crypto.subtle.deriveBits(
+                            { name: "ECDH", public: ephemeralPubKey },
+                            privateKey,
+                            256
+                        );
+
+                        // Create AES key from shared secret
+                        const aesKey = await window.crypto.subtle.importKey(
+                            "raw",
+                            sharedSecret,
+                            { name: "AES-GCM", length: 256 },
+                            false,
+                            ["decrypt"]
+                        );
+
+                        // Decrypt the data
+                        const decrypted = await window.crypto.subtle.decrypt(
+                            { name: "AES-GCM", iv: iv },
+                            aesKey,
+                            encryptedData
+                        );
+
+                        const decryptedText = decoder.decode(decrypted);
+
+
+                        return {
+                            content: decryptedText,
+                            author: 'team-member'
+                        };
+                    } catch (err) {
+                        console.error('[ElGamalProvider] Team decryption failed:', err);
+                        throw err;
+                    }
+                },
+
+                can_encrypt: canEncrypt,
+                can_decrypt: canDecrypt
+            };
+        } catch (error) {
+            console.error('[ElGamalProvider] Error creating team encryptor:', error);
+            throw error;
+        }
+    }
 
     // ========== Key Validation Methods ==========
 
