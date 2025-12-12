@@ -389,20 +389,31 @@ export class ElGamalCryptoProvider {
         try {
             this.validateTeamKeys(keys);
 
-            const canEncrypt = !!(keys.teamCurvePublic && keys.teamEdPrivate);
-            const canDecrypt = !!(keys.teamCurvePrivate && keys.teamEdPublic);
+            const frozenKeys = Object.freeze({
+                teamCurvePublic: keys.teamCurvePublic,
+                teamCurvePrivate: keys.teamCurvePrivate,
+                teamEdPublic: keys.teamEdPublic,
+                teamEdPrivate: keys.teamEdPrivate,
+                myCurvePublic: keys.myCurvePublic,
+                myCurvePrivate: keys.myCurvePrivate
+            });
+
+            const canEncrypt = !!(frozenKeys.teamCurvePublic && frozenKeys.teamEdPrivate);
+            const canDecrypt = !!(frozenKeys.teamCurvePrivate && frozenKeys.teamEdPublic);
 
             return {
+                can_encrypt: canEncrypt,
+                can_decrypt: canDecrypt,
                 encrypt: async (plain) => {
                     if (!canEncrypt) {
                         throw new Error('Team encryptor does not have encryption capability');
                     }
 
-                    const encryptedData = await this.elgamalEncrypt(keys.teamCurvePublic, plain);
+                    const encryptedData = await this.elgamalEncrypt(frozenKeys.teamCurvePublic, plain);
 
                     let signingKey;
                     try {
-                        signingKey = this.cryptoModule.Nacl.util.decodeBase64(keys.teamEdPrivate);
+                        signingKey = this.cryptoModule.Nacl.util.decodeBase64(frozenKeys.teamEdPrivate);
                         if (signingKey.length !== 64) {
                             throw new Error('Invalid team signing key format');
                         }
@@ -427,7 +438,8 @@ export class ElGamalCryptoProvider {
                         iv: this.cryptoModule.Nacl.util.encodeBase64(encryptedData.iv),
                         ciphertext: this.cryptoModule.Nacl.util.encodeBase64(encryptedData.ciphertext),
                         signature: this.cryptoModule.Nacl.util.encodeBase64(signature),
-                        teamPublicKey: keys.teamCurvePublic
+                        teamPublicKey: frozenKeys.teamCurvePublic,
+                        teamEdPublic: frozenKeys.teamEdPublic // embed signing public key
                     };
 
                     const encoder = new TextEncoder();
@@ -438,8 +450,6 @@ export class ElGamalCryptoProvider {
                     if (!canDecrypt) {
                         throw new Error('Team encryptor does not have decryption capability');
                     }
-
-                    console.log('[ElGamalProvider] Using ElGamal team decryption');
 
                     const decoder = new TextDecoder();
                     const ciphertextBytes = this.cryptoModule.Nacl.util.decodeBase64(ciphertext);
@@ -455,15 +465,16 @@ export class ElGamalCryptoProvider {
                     const encryptedData = this.cryptoModule.Nacl.util.decodeBase64(encryptedMessage.ciphertext);
                     const signature = this.cryptoModule.Nacl.util.decodeBase64(encryptedMessage.signature);
 
-                    // Verify team signature if not skipping validation
                     if (!skipValidation) {
                         const messageToVerify = this.concatUint8Arrays([c1, iv, encryptedData]);
-                        const teamPublicSigningKey = this.cryptoModule.Nacl.util.decodeBase64(keys.teamEdPublic);
+                        const embeddedPub = encryptedMessage.teamEdPublic;
+                        const pubKeyBase64 = embeddedPub || frozenKeys.teamEdPublic; // prefer embedded
+                        const teamPublicSigningKey = this.cryptoModule.Nacl.util.decodeBase64(pubKeyBase64);
 
                         if (teamPublicSigningKey.length !== 32) {
                             throw new Error('Invalid team public key format');
                         }
-
+                        
                         const isValid = this.cryptoModule.Nacl.sign.detached.verify(
                             messageToVerify,
                             signature,
@@ -475,32 +486,23 @@ export class ElGamalCryptoProvider {
                         }
                     }
 
-                    // Decrypt using ElGamal
                     let decryptedText;
                     try {
-                        decryptedText = await this.elgamalDecrypt(keys.teamCurvePrivate, {
-                            c1: c1,
-                            iv: iv,
+                        decryptedText = await this.elgamalDecrypt(frozenKeys.teamCurvePrivate, {
+                            c1,
+                            iv,
                             ciphertext: encryptedData
                         });
-                    } catch (decryptError) {
-                        if (decryptError.name === 'OperationError' || decryptError instanceof DOMException) {
-                            throw new Error('Team decryption failed: wrong team keys or corrupted data');
-                        }
-                        throw new Error(`Team decryption failed: ${decryptError.message}`);
+                    } catch (error) {
+                        console.error('[ElGamalProvider] ElGamal decryption failed:', error);
+                        throw error;
                     }
 
-                    return {
-                        content: decryptedText,
-                        author: 'team-member'
-                    };
-                },
-
-                can_encrypt: canEncrypt,
-                can_decrypt: canDecrypt
+                    return decryptedText;
+                }
             };
         } catch (error) {
-            console.error('[ElGamalProvider] Error creating team encryptor:', error);
+            console.error('[ElGamalProvider] Failed to create Team encryptor:', error);
             throw error;
         }
     }

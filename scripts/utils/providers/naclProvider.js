@@ -186,7 +186,7 @@ export class NaclCryptoProvider {
         
         try {
             this.validateTeamKeys(keys);
-            const formattedKeys = { ...keys };
+            const formattedKeys = Object.freeze({ ...keys });
             const teamEncryptor = this.cryptoModule.Team.createEncryptor(formattedKeys);
 
             if (!teamEncryptor) {
@@ -197,6 +197,8 @@ export class NaclCryptoProvider {
             const canDecrypt = !!teamEncryptor.decrypt;
 
             return {
+                can_encrypt: canEncrypt,
+                can_decrypt: canDecrypt,
                 encrypt: async (plain) => {
                     try {
                         if (!teamEncryptor.encrypt) {
@@ -206,6 +208,11 @@ export class NaclCryptoProvider {
                         if (!encrypted) {
                             throw new Error('Team encryption returned null or undefined');
                         }
+                        // Ensure the bundle includes teamEdPublic (if provider returns object)
+                        if (typeof encrypted === 'object' && formattedKeys.teamEdPublic && !encrypted.teamEdPublic) {
+                            encrypted.teamEdPublic = formattedKeys.teamEdPublic;
+                        }
+
                         return encrypted;
                     } catch (err) {
                         console.error('[NaclProvider] Team encryption failed:', err);
@@ -237,6 +244,7 @@ export class NaclCryptoProvider {
                             throw new Error('Team decryption returned null or undefined');
                         }
 
+
                         if (typeof result === 'object' && result.content) {
                             return result;
                         } else if (typeof result === 'string') {
@@ -254,12 +262,10 @@ export class NaclCryptoProvider {
                         console.error('[NaclProvider] Team decryption failed:', err);
                         throw err;
                     }
-                },
-                can_encrypt: canEncrypt,
-                can_decrypt: canDecrypt
+                }
             };
         } catch (error) {
-            console.error('[NaclProvider] Error creating team encryptor:', error);
+            console.error('[NaclProvider] Failed to create Team encryptor:', error);
             throw error;
         }
     }

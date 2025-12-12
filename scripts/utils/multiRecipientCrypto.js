@@ -4,6 +4,22 @@
 
 import {getCryptoProvider, CRYPTO_SCHEMES, ENCRYPTOR_TYPES} from './cryptoProvider.js';
 
+// Minimal async mutex to serialize team operations
+class AsyncMutex {
+    constructor() {
+        this._pending = Promise.resolve();
+    }
+    run(fn) {
+        const next = this._pending.then(() => fn()).catch((e) => { throw e; });
+        // ensure chain continues even on error
+        this._pending = next.catch(() => {});
+        return next;
+    }
+    wait() {
+        return this._pending.catch(() => {});
+    }
+}
+
 export class MultiRecipientCrypto {
     constructor(user, scheme = CRYPTO_SCHEMES.PQC, cryptoOptions = {}) {
         this.user = user;
@@ -15,6 +31,8 @@ export class MultiRecipientCrypto {
         this.mailboxEncryptor = null;
         this.teamEncryptor = null;
         this.teamKeys = null;
+        // Team ops mutex
+        this._teamMutex = new AsyncMutex();
     }
 
     // ========== Initialization Methods ==========
@@ -60,28 +78,24 @@ export class MultiRecipientCrypto {
     }
 
     async createTeamEncryptor(teamKeys = null) {
-        if (this.teamEncryptor && !teamKeys) return this.teamEncryptor;
+        if (this.teamEncryptor && !teamKeys && this.teamKeys) return this.teamEncryptor;
 
         const keys = teamKeys || this.teamKeys || this.generateTeamKeys();
-
         if (!keys) {
             throw new Error('Failed to create team encryptor: no team keys available');
         }
 
-        this.teamKeys = keys;
-        console.log(`[MultiRecipientCrypto] Creating team encryptor with ${teamKeys ? 'provided' : 'generated'} team keys`);
-
-        this.teamEncryptor = await this.cryptoProvider.createTeamEncryptor(keys);
-
-        if (this.teamEncryptor.can_encrypt !== undefined) {
-            console.log(`[MultiRecipientCrypto] Team encryptor can encrypt: ${this.teamEncryptor.can_encrypt}`);
+        if (!teamKeys) {
+            this.teamKeys = keys;
         }
-        
-        if (this.teamEncryptor.can_decrypt !== undefined) {
-            console.log(`[MultiRecipientCrypto] Team encryptor can decrypt: ${this.teamEncryptor.can_decrypt}`);
+
+        console.log(`[MultiRecipientCrypto] Creating team encryptor with ${teamKeys ? 'provided' : 'stored'} team keys`);
+        const encryptor = await this.cryptoProvider.createTeamEncryptor(keys);
+
+        if (!teamKeys) {
+            this.teamEncryptor = encryptor;
         }
-        
-        return this.teamEncryptor;
+        return encryptor;
     }
 
     generateTeamKeys() {
@@ -98,15 +112,17 @@ export class MultiRecipientCrypto {
         return keys;
     }
 
-    setTeamKeys(keys) {
+    async setTeamKeys(keys) {
         if (!keys) {
             console.warn('[MultiRecipientCrypto] Attempted to set null team keys');
             return;
         }
-
-        this.teamKeys = keys;
-        this.teamEncryptor = null; // Force recreation of the team encryptor
-        console.log('[MultiRecipientCrypto] Team keys set, encryptor will be recreated');
+        // Serialize key changes to avoid races with encrypt/decrypt
+        await this._teamMutex.run(async () => {
+            this.teamKeys = keys;
+            this.teamEncryptor = null; // Force recreation
+            console.log('[MultiRecipientCrypto] Team keys set, encryptor will be recreated');
+        });
     }
 
     // ========== Helper Methods ==========
@@ -175,27 +191,65 @@ export class MultiRecipientCrypto {
         this.user.messageSizes.push(sizes);
     }
 
+    _extractTeamSizes(teamEncrypted) {
+        try {
+            // If provider returned object with fields
+            if (typeof teamEncrypted === 'object' && teamEncrypted !== null) {
+                const encField = teamEncrypted.outerBundle?.encryptedData || teamEncrypted.ciphertext || teamEncrypted.encryptedData;
+                const sigField = teamEncrypted.signature;
+                const encryptedSize = this._estimateSize(encField || teamEncrypted);
+                const signatureSize = sigField ? this._estimateSize(sigField) : 0;
+                return { encryptedSize, signatureSize };
+            }
+            // If provider returned base64 string
+            if (typeof teamEncrypted === 'string') {
+                // Try to decode base64 and parse JSON (ElGamal JSON bundle)
+                try {
+                    const bytes = window.chainpad_crypto?.Nacl?.util?.decodeBase64
+                        ? window.chainpad_crypto.Nacl.util.decodeBase64(teamEncrypted)
+                        : Uint8Array.from(atob(teamEncrypted), c => c.charCodeAt(0));
+                    const str = (new TextDecoder()).decode(bytes);
+                    const obj = JSON.parse(str);
+                    const ciphertextB64 = obj.ciphertext || obj.outerBundle?.encryptedData;
+                    const signatureB64 = obj.signature;
+                    const encryptedSize = this._estimateSize(ciphertextB64 || teamEncrypted);
+                    const signatureSize = signatureB64 ? this._estimateSize(signatureB64) : 0;
+                    return { encryptedSize, signatureSize };
+                } catch (_) {
+                    // NaCl Team bundle: signed message (signature 64 bytes prepended)
+                    // Estimate raw byte length from base64 length
+                    const padding = teamEncrypted.endsWith('==') ? 2 : teamEncrypted.endsWith('=') ? 1 : 0;
+                    const totalBytes = Math.floor((teamEncrypted.length * 3) / 4) - padding;
+                    const signatureSize = 64; // NaCl sign signature size in bytes
+                    const encryptedSize = Math.max(totalBytes - signatureSize, 0);
+                    return { encryptedSize, signatureSize };
+                }
+            }
+        } catch (e) {
+            console.warn('[MultiRecipientCrypto] Failed to extract team sizes:', e);
+        }
+        return { encryptedSize: this._estimateSize(teamEncrypted) };
+    }
+
     // ========== Encryption Methods ==========
 
     async encryptForTeam(data) {
-        if (!this.teamKeys) {
-            console.log('[MultiRecipientCrypto] No team keys found, generating new ones');
-            this.teamKeys = this.generateTeamKeys();
-        }
-
-        const encryptor = await this.createTeamEncryptor(this.teamKeys);
-        
-        // Check if encryptor can encrypt
-        if (encryptor.can_encrypt === false) {
-            throw new Error('Team encryptor does not have encryption capability with current keys');
-        }
-
-        const encrypted = await encryptor.encrypt(data);
-        if (!encrypted) {
-            throw new Error('Team encryption failed to produce output');
-        }
-
-        return encrypted;
+        return this._teamMutex.run(async () => {
+            if (!this.teamKeys) {
+                console.log('[MultiRecipientCrypto] No team keys found, generating new ones');
+                this.teamKeys = this.generateTeamKeys();
+            }
+            const keysUsed = { ...this.teamKeys }; // snapshot exact keys used
+            const encryptor = await this.createTeamEncryptor(keysUsed);
+            if (encryptor.can_encrypt === false) {
+                throw new Error('Team encryptor does not have encryption capability with current keys');
+            }
+            const teamEncrypted = await encryptor.encrypt(data);
+            if (!teamEncrypted) {
+                throw new Error('Team encryption failed to produce output');
+            }
+            return { teamEncrypted, teamKeysUsed: keysUsed };
+        });
     }
 
     async encryptForMailbox(data, recipientPublicKeys) {
@@ -238,17 +292,13 @@ export class MultiRecipientCrypto {
         try {
             if (encryptorType === ENCRYPTOR_TYPES.TEAM) {
                 console.log('[MultiRecipientCrypto] Using TEAM encryptor for message');
-                const teamEncrypted = await this.encryptForTeam(dataString);
+                const { teamEncrypted, teamKeysUsed } = await this.encryptForTeam(dataString);
 
-                if (teamEncrypted) {
-                    sizes = {
-                        encryptedSize: this._estimateSize(teamEncrypted.outerBundle?.encryptedData),
-                        signatureSize: this._estimateSize(teamEncrypted.signature)
-                    };
-                }
-                
+                sizes = this._extractTeamSizes(teamEncrypted);
+
                 return {
                     teamEncrypted,
+                    teamKeysUsed,
                     stats: this._createStats(startTime, 'encrypt', sizes)
                 };
             } else {
@@ -295,7 +345,7 @@ export class MultiRecipientCrypto {
             encryptorType
         };
 
-        const { teamEncrypted, encryptedVersions } = await this.encryptForMultipleRecipients(
+        const { teamEncrypted, teamKeysUsed, encryptedVersions } = await this.encryptForMultipleRecipients(
             dataString,
             recipientPublicKeys,
             encryptorType
@@ -309,7 +359,7 @@ export class MultiRecipientCrypto {
             return {
                 ...baseBlock,
                 teamEncrypted,
-                teamKeys: this.teamKeys
+                teamKeys: teamKeysUsed // include exact keys used for encryption
             };
         } else {
             return {
@@ -323,56 +373,35 @@ export class MultiRecipientCrypto {
 
     async decryptTeamBlock(block) {
         if (!block.teamEncrypted) {
-            throw new Error("Invalid team block structure: missing teamEncrypted property");
+            throw new Error('Invalid team block structure: missing teamEncrypted property');
         }
+        return this._teamMutex.run(async () => {
+            if (block.teamKeys) {
+                console.log('[MultiRecipientCrypto] Using team keys from block');
+                this.teamKeys = block.teamKeys;
+                this.teamEncryptor = null; // Force recreation
+            } else if (!this.teamKeys) {
+                throw new Error('No team keys available for decryption');
+            } else {
+                console.log('[MultiRecipientCrypto] Using existing team keys');
+            }
 
-        // Set appropriate team keys
-        if (block.teamKeys) {
-            console.log("[MultiRecipientCrypto] Using team keys from block");
-            this.setTeamKeys(block.teamKeys);
-        } else if (!this.teamKeys) {
-            throw new Error("No team keys available for decryption");
-        } else {
-            console.log("[MultiRecipientCrypto] Using existing team keys");
-        }
-
-        const encryptor = await this.createTeamEncryptor(this.teamKeys);
-        
-        // Check if encryptor can decrypt
-        if (encryptor.can_decrypt === false) {
-            throw new Error('Team encryptor does not have decryption capability with current keys');
-        }
-        
-        console.log("[MultiRecipientCrypto] Team encryptor created, attempting to decrypt");
-        console.log("[MultiRecipientCrypto] Encrypted data type:", typeof block.teamEncrypted);
-        
-        try {
-            // skipValidation is explicitly set to false to ensure signatures are always verified
-            // This is a security measure - only set to true in special circumstances where
-            // signature validation is handled elsewhere or not needed
+            const encryptor = await this.createTeamEncryptor(this.teamKeys);
+            if (encryptor.can_decrypt === false) {
+                throw new Error('Team encryptor does not have decryption capability with current keys');
+            }
+            console.log('[MultiRecipientCrypto] Team encryptor created, attempting to decrypt');
             const result = await encryptor.decrypt(block.teamEncrypted, false);
-            
             if (!result) {
                 throw new Error('Decryption succeeded but returned null or undefined result');
             }
-            
             if (!result.content) {
-                console.warn("[MultiRecipientCrypto] Decryption succeeded but content is missing");
-                // Try to handle various result formats that might be returned
-                if (typeof result === 'string') {
-                    return result;
-                } else if (result.author) {
-                    // If we have author but no content, the API might be returning a different structure
-                    return JSON.stringify(result);
-                }
+                if (typeof result === 'string') return result;
+                if (result.author) return JSON.stringify(result);
                 throw new Error('Team decryption succeeded but returned invalid content structure');
             }
-            
             return result.content;
-        } catch (error) {
-            console.error("[MultiRecipientCrypto] Team decryption failed:", error);
-            throw error;
-        }
+        });
     }
 
     async decryptMailboxBlock(block) {
@@ -446,4 +475,3 @@ export class MultiRecipientCrypto {
         };
     }
 }
-
