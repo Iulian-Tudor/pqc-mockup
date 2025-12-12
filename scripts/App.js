@@ -127,6 +127,11 @@ class SimulationApp {
 
             const params = this.getSimulationParameters();
             this.log(`Using crypto scheme: ${params.cryptoScheme}`, 'info');
+
+            if (params.cryptoScheme === 'pqc' && params.kem && params.signature) {
+                this.log(`Using ${params.kem} + ${params.signature}`, 'info');
+            }
+
             const startTime = performance.now();
 
             if (this.resultsElement.children.length === 0) {

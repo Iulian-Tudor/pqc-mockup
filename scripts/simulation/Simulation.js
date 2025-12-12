@@ -17,7 +17,11 @@ export class Simulation {
             logFrequency: params.logFrequency || 1000,
             useDistribution: params.useDistribution || false,
             cryptoScheme: params.cryptoScheme || CRYPTO_SCHEMES.PQC,
-            encryptorType: params.encryptorType || ENCRYPTOR_TYPES.MAILBOX
+            encryptorType: params.encryptorType || ENCRYPTOR_TYPES.MAILBOX,
+            cryptoOptions: {
+                kemVariant: params.kem,
+                dsaVariant: params.signature
+            }
         };
 
         this.users = [];
@@ -84,11 +88,15 @@ export class Simulation {
 
     async initializeUsers() {
         this.log("Initializing users...");
-        const { numUsers } = this.config;
-        const cryptoScheme = this.config.cryptoScheme;
+        const { numUsers, cryptoScheme, cryptoOptions } = this.config;
+
+        // Log the crypto variants being used
+        if (cryptoScheme === CRYPTO_SCHEMES.PQC && cryptoOptions.kemVariant && cryptoOptions.dsaVariant) {
+            this.log(`Using ${cryptoOptions.kemVariant} + ${cryptoOptions.dsaVariant}`, 'info');
+        }
 
         for (let i = 0; i < numUsers; i++) {
-            const user = new User(i, cryptoScheme);
+            const user = new User(i, cryptoScheme, cryptoOptions);
             const success = await user.init();
 
             if (!success) {
@@ -207,10 +215,8 @@ export class Simulation {
                 try {
                     if (!user.hasTeamKeys()) {
                         if (!this.sharedTeamKeys) {
-                            console.log("[Simulation] Generating shared team keys for the simulation");
                             this.sharedTeamKeys = await user.generateTeamKeys();
                         } else {
-                            console.log("[Simulation] Using existing shared team keys");
                             await user.setTeamKeys(this.sharedTeamKeys);
                         }
                     }

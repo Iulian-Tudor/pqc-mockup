@@ -4,17 +4,56 @@
 
 import { kemSchemes, signatureSchemes, symmetricCiphers } from '../schemes/cryptoSchemes.js';
 
+// Variant configurations
+const KEM_VARIANTS = {
+    'ml-kem-512': 'ml-kem-512',
+    'ml-kem-768': 'ml-kem-768',
+    'ml-kem-1024': 'ml-kem-1024'
+};
+
+const DSA_VARIANTS = {
+    'ml-dsa-44': 'ml-dsa-44',
+    'ml-dsa-65': 'ml-dsa-65',
+    'ml-dsa-87': 'ml-dsa-87'
+};
+
 export class PQCProvider {
     constructor(options = {}) {
         this.initialized = false;
 
-        this.kemScheme = kemSchemes[options.kem || 'ml-kem-1024'];
-        this.signatureScheme = signatureSchemes[options.signature || 'ml-dsa-87'];
+        // Validate and set KEM variant
+        const kemVariant = options.kem || 'ml-kem-1024';
+        if (!KEM_VARIANTS[kemVariant]) {
+            throw new Error(`Invalid KEM variant: ${kemVariant}. Available: ${Object.keys(KEM_VARIANTS).join(', ')}`);
+        }
+
+        // Validate and set DSA variant
+        const dsaVariant = options.signature || 'ml-dsa-87';
+        if (!DSA_VARIANTS[dsaVariant]) {
+            throw new Error(`Invalid DSA variant: ${dsaVariant}. Available: ${Object.keys(DSA_VARIANTS).join(', ')}`);
+        }
+
+        this.kemScheme = kemSchemes[kemVariant];
+        this.signatureScheme = signatureSchemes[dsaVariant];
         this.symmetricCipher = symmetricCiphers[options.symmetric || 'aes-gcm'];
-        
-        if (!this.kemScheme) throw new Error('Invalid KEM scheme specified');
-        if (!this.signatureScheme) throw new Error('Invalid signature scheme specified');
+
+        this.kemVariant = kemVariant;
+        this.dsaVariant = dsaVariant;
+
+        console.log(`[PQCProvider] Initialized with ${kemVariant} + ${dsaVariant}`);
+
+        if (!this.kemScheme) throw new Error(`KEM scheme ${kemVariant} not found`);
+        if (!this.signatureScheme) throw new Error(`Signature scheme ${dsaVariant} not found`);
         if (!this.symmetricCipher) throw new Error('Invalid symmetric cipher specified');
+    }
+
+    getVariantInfo() {
+        return {
+            kem: this.kemVariant,
+            signature: this.dsaVariant,
+            kemSizes: this.kemScheme.sizes || {},
+            signatureSizes: this.signatureScheme.sizes || {}
+        };
     }
 
     async init() {
@@ -107,15 +146,14 @@ export class PQCProvider {
     signData(data, secretKey) {
         const sk = this._ensureUint8Array(secretKey);
         const dataBytes = data instanceof Uint8Array ? data : this.textToBytes(data);
-        return this.signatureScheme.sign(dataBytes, sk);
+        return this.signatureScheme.sign(sk, dataBytes);
     }
 
     verifySignature(signature, data, publicKey) {
-        const pubKey = this._ensureUint8Array(publicKey);
-        const dataBytes = data instanceof Uint8Array ? data : this.textToBytes(data);
         const sig = this._ensureUint8Array(signature);
-        console.log("lenghts", pubKey.length, dataBytes.length, sig.length);
-        return this.signatureScheme.verify(sig, dataBytes, pubKey);
+        const dataBytes = data instanceof Uint8Array ? data : this.textToBytes(data);
+        const pubKey = this._ensureUint8Array(publicKey);
+        return this.signatureScheme.verify(pubKey, dataBytes, sig);
     }
 
     // ========== Encryptor Creation Methods ==========
@@ -234,7 +272,6 @@ export class PQCProvider {
 
         // Sign the entire outer bundle
         const outerBundleBytes = this.textToBytes(JSON.stringify(outerBundle));
-        console.log("length secret key", keys.teamEdPrivate.length);
         const signature = await this.signData(outerBundleBytes, keys.teamEdPrivate);
 
         return {
@@ -300,7 +337,7 @@ export class PQCProvider {
     validateTeamKeys(keys) {
         const requiredKeys = [
             'teamCurvePublic', 'teamCurvePrivate',
-            'teamEdPublic', 'teamEdPrivate', 
+            'teamEdPublic', 'teamEdPrivate',
             'myCurvePublic', 'myCurvePrivate'
         ];
         

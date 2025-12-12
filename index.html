@@ -22,7 +22,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <body>
 <header>
     <h1>CryptPad Post-Quantum Cryptography Simulation</h1>
-    <p class="description">This simulation demonstrates ML-KEM-1024 encryption/decryption and ML-DSA-87 digital signatures with multiple users.</p>
+    <p class="description">This simulation demonstrates post-quantum cryptography with modular ML-KEM and ML-DSA variants, supporting multiple users and encryption modes.</p>
 </header>
 
 <main>
@@ -65,7 +65,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <select id="cryptoScheme" name="cryptoScheme">
                     <option value="pqc" selected>Post-Quantum (ML-KEM/ML-DSA)</option>
                     <option value="nacl">Classic (NaCl)</option>
-                    <option value="elgamal">ElGamal (ECDH+AES-GCM)</option>
+                    <option value="elgamal">ElGamal (+AES-GCM)</option>
                 </select>
             </div>
 
@@ -73,17 +73,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <div class="parameter-item">
                     <label for="kemScheme">KEM Scheme:</label>
                     <select id="kemScheme" name="kemScheme">
-                        <option value="ml-kem-1024" selected>ML-KEM-1024</option>
-                        <!-- Add more KEM schemes in the future -->
+                        <option value="ml-kem-512">ML-KEM-512 (128-bit security, 800B keys, faster)</option>
+                        <option value="ml-kem-768">ML-KEM-768 (192-bit security, 1184B keys, balanced)</option>
+                        <option value="ml-kem-1024" selected>ML-KEM-1024 (256-bit security, 1568B keys, strongest)</option>
                     </select>
+                    <span class="input-hint">Choose key encapsulation mechanism and security level</span>
                 </div>
 
                 <div class="parameter-item">
                     <label for="signatureScheme">Signature Scheme:</label>
                     <select id="signatureScheme" name="signatureScheme">
-                        <option value="ml-dsa-87" selected>ML-DSA-87</option>
-                        <!-- Add more signature schemes in the future -->
+                        <option value="ml-dsa-44">ML-DSA-44 (128-bit security, 2420B sigs, faster)</option>
+                        <option value="ml-dsa-65">ML-DSA-65 (192-bit security, 3309B sigs, balanced)</option>
+                        <option value="ml-dsa-87" selected>ML-DSA-87 (256-bit security, 4627B sigs, strongest)</option>
                     </select>
+                    <span class="input-hint">Choose digital signature algorithm and security level</span>
                 </div>
             </div>
 

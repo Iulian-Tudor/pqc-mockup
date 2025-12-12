@@ -6,9 +6,10 @@ import { MultiRecipientCrypto } from '../utils/multiRecipientCrypto.js';
 import { getCryptoProvider, CRYPTO_SCHEMES, ENCRYPTOR_TYPES } from '../utils/cryptoProvider.js';
 
 export class User {
-    constructor(id, cryptoScheme = CRYPTO_SCHEMES.PQC) {
+    constructor(id, cryptoScheme = CRYPTO_SCHEMES.PQC, cryptoOptions = {}) {
         this.id = id;
         this.cryptoScheme = cryptoScheme;
+        this.cryptoOptions = cryptoOptions;
         this.kemKeys = null;
         this.signKeys = null;
         this.multiRecipientCrypto = null;
@@ -18,14 +19,14 @@ export class User {
 
     async init() {
         try {
-            const cryptoProvider = getCryptoProvider(this.cryptoScheme);
+            const cryptoProvider = getCryptoProvider(this.cryptoScheme, this.cryptoOptions);
             await cryptoProvider.init();
 
             this.kemKeys = await cryptoProvider.generateKEMKeyPair();
 
             this.signKeys = await cryptoProvider.generateDSAKeyPair();
 
-            this.multiRecipientCrypto = new MultiRecipientCrypto(this, this.cryptoScheme);
+            this.multiRecipientCrypto = new MultiRecipientCrypto(this, this.cryptoScheme, this.cryptoOptions);
 
             await this.multiRecipientCrypto.init();
 
@@ -38,7 +39,7 @@ export class User {
 
     async ensureCryptoInitialized() {
         if (!this.multiRecipientCrypto) {
-            this.multiRecipientCrypto = new MultiRecipientCrypto(this, this.cryptoScheme);
+            this.multiRecipientCrypto = new MultiRecipientCrypto(this, this.cryptoScheme, this.cryptoOptions);
         }
         return this.multiRecipientCrypto.ensureInitialized();
     }
@@ -71,8 +72,7 @@ export class User {
 
             if (encryptorType === ENCRYPTOR_TYPES.TEAM) {
                 if (!this.teamKeys) {
-                    console.log(`[User ${this.id}] Team encryption requested but no keys set, generating keys`);
-                    this.teamKeys = this.multiRecipientCrypto.generateTeamKeys();
+                    throw new Error(`User ${this.id} has no team keys set for team encryption`);
                 }
                 this.multiRecipientCrypto.setTeamKeys(this.teamKeys);
             }

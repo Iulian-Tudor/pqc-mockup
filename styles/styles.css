@@ -89,10 +89,30 @@ main {
     transition: var(--transition);
 }
 
-.parameter-item input:focus {
+.parameter-item select {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    background-color: white;
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.parameter-item input:focus,
+.parameter-item select:focus {
     border-color: var(--primary);
     outline: none;
     box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+}
+
+.parameter-item select:hover {
+    border-color: var(--primary);
+}
+
+.parameter-item select option {
+    padding: 8px;
 }
 
 .parameter-item input:invalid {
@@ -425,4 +445,30 @@ main {
     margin: 15px 0;
     padding: 15px;
     border-radius: 4px;
+}
+
+/* Variant information display styles */
+.variant-info-section {
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: var(--border-radius);
+    padding: 20px;
+    margin-bottom: 25px;
+}
+
+.variant-info-section h3 {
+    margin: 0 0 15px 0;
+    color: var(--primary);
+    font-size: 16px;
+}
+
+.variant-details p {
+    margin: 8px 0;
+    font-size: 14px;
+    color: var(--dark);
+}
+
+.variant-details strong {
+    color: var(--primary-dark);
+    font-weight: 600;
 }
