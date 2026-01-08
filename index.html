@@ -100,6 +100,37 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <span class="input-hint">Mailbox for chat, Team for document editing</span>
             </div>
 
+            <div class="parameter-separator"></div>
+            
+            <div class="parameter-section-title">PQC Handshake Benchmark (Dissertation Mode)</div>
+            
+            <div class="parameter-checkbox">
+                <input type="checkbox" id="enableBenchmark" aria-describedby="benchmark-desc">
+                <label for="enableBenchmark">Run PQC Handshake Benchmark</label>
+                <p id="benchmark-desc" class="checkbox-description">
+                    Compare Hybrid (X25519+Kyber-768) vs Pure PQC 2-KEM (30k iterations)
+                </p>
+            </div>
+
+            <div class="benchmark-options" id="benchmark-options" style="display: none;">
+                <div class="parameter-item">
+                    <label for="benchmarkIterations">Benchmark Iterations:</label>
+                    <input type="number" id="benchmarkIterations" min="1000" max="100000" value="30000" required>
+                    <span class="input-hint">Default: 30,000 (with 1,000 warm-up)</span>
+                </div>
+
+                <div class="parameter-item">
+                    <label for="networkProfile">Network Profile:</label>
+                    <select id="networkProfile" name="networkProfile">
+                        <option value="high-speed" selected>High-Speed / Local (No delay)</option>
+                        <option value="mobile-4g">Mobile / 4G (50ms latency, 10 Mbps)</option>
+                        <option value="mobile-3g">Mobile / 3G (100ms latency, 3 Mbps)</option>
+                        <option value="satellite">Satellite (600ms latency, 1 Mbps)</option>
+                    </select>
+                    <span class="input-hint">Test network impact on handshake performance</span>
+                </div>
+            </div>
+
             <div class="button-group">
                 <button type="submit" id="startButton" class="primary-button">Start Simulation</button>
                 <button type="button" id="resetButton" class="secondary-button" disabled>Reset Results</button>

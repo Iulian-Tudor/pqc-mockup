@@ -5,6 +5,8 @@
 import { runSimulation } from './simulation/Simulation.js';
 import { ChartRenderer } from './visualization/ChartRenderer.js';
 import { ENCRYPTOR_TYPES } from './utils/cryptoProvider.js';
+import { HandshakeBenchmark } from './benchmark/HandshakeBenchmark.js';
+import { NETWORK_PROFILES } from './benchmark/NetworkSimulator.js';
 
 class SimulationApp {
     constructor() {
@@ -16,6 +18,8 @@ class SimulationApp {
         this.statusIndicator = document.getElementById('status-indicator');
         this.cryptoSchemeSelect = document.getElementById('cryptoScheme');
         this.pqcOptionsContainer = document.getElementById('pqc-options');
+        this.enableBenchmarkCheckbox = document.getElementById('enableBenchmark');
+        this.benchmarkOptionsContainer = document.getElementById('benchmark-options');
 
         this.isRunning = false;
         this.simulationCount = 0;
@@ -23,12 +27,14 @@ class SimulationApp {
         this.setupEventListeners();
 
         this.togglePqcOptions();
+        this.toggleBenchmarkOptions();
     }
 
     setupEventListeners() {
         this.form.addEventListener('submit', (e) => this.handleSubmit(e));
         this.resetButton.addEventListener('click', () => this.resetResults());
         this.cryptoSchemeSelect.addEventListener('change', () => this.togglePqcOptions());
+        this.enableBenchmarkCheckbox.addEventListener('change', () => this.toggleBenchmarkOptions());
 
         const inputs = this.form.querySelectorAll('input[type="number"]');
         inputs.forEach(input => {
@@ -39,6 +45,11 @@ class SimulationApp {
     togglePqcOptions() {
         const showPqcOptions = this.cryptoSchemeSelect.value === 'pqc';
         this.pqcOptionsContainer.style.display = showPqcOptions ? 'block' : 'none';
+    }
+
+    toggleBenchmarkOptions() {
+        const showBenchmarkOptions = this.enableBenchmarkCheckbox.checked;
+        this.benchmarkOptionsContainer.style.display = showBenchmarkOptions ? 'block' : 'none';
     }
 
     validateInput(input) {
@@ -125,37 +136,126 @@ class SimulationApp {
             this.simulationCount++;
             this.updateUIState('running');
 
-            const params = this.getSimulationParameters();
-            this.log(`Using crypto scheme: ${params.cryptoScheme}`, 'info');
+            // Check if benchmark mode is enabled
+            const enableBenchmark = document.getElementById('enableBenchmark').checked;
 
-            if (params.cryptoScheme === 'pqc' && params.kem && params.signature) {
-                this.log(`Using ${params.kem} + ${params.signature}`, 'info');
+            if (enableBenchmark) {
+                // Run PQC Handshake Benchmark
+                await this.runBenchmark();
+            } else {
+                // Run normal simulation
+                const params = this.getSimulationParameters();
+                this.log(`Using crypto scheme: ${params.cryptoScheme}`, 'info');
+
+                if (params.cryptoScheme === 'pqc' && params.kem && params.signature) {
+                    this.log(`Using ${params.kem} + ${params.signature}`, 'info');
+                }
+
+                const startTime = performance.now();
+
+                if (this.resultsElement.children.length === 0) {
+                    this.resetLog();
+                }
+
+                const result = await runSimulation(params);
+
+                const executionTime = performance.now() - startTime;
+
+                if (result && result.analytics) {
+                    result.analytics.setExecutionTime(executionTime);
+                    this.renderVisualizations(result.analytics);
+                    this.log(`Simulation completed in ${(executionTime / 1000).toFixed(2)} seconds`);
+                }
             }
-
-            const startTime = performance.now();
-
-            if (this.resultsElement.children.length === 0) {
-                this.resetLog();
-            }
-
-            const result = await runSimulation(params);
-
-            const executionTime = performance.now() - startTime;
-
-            if (result && result.analytics) {
-                result.analytics.setExecutionTime(executionTime);
-                this.renderVisualizations(result.analytics);
-                this.log(`Simulation completed in ${(executionTime / 1000).toFixed(2)} seconds`);
-            }
-
-            this.updateUIState('completed');
         } catch (error) {
+            this.log(`Simulation error: ${error.message}`, 'error');
             console.error('Simulation error:', error);
-            this.log(`Error: ${error.message}`, 'error');
-            this.updateUIState('error');
         } finally {
             this.isRunning = false;
+            this.updateUIState('complete');
         }
+    }
+
+    async runBenchmark() {
+        this.log('=== Starting PQC Handshake Benchmark ===', 'info');
+        this.log('This will compare Hybrid (X25519+Kyber-768) vs Pure PQC 2-KEM protocols', 'info');
+        this.log('', 'info');
+
+        // Get benchmark parameters
+        const iterations = parseInt(document.getElementById('benchmarkIterations').value) || 30000;
+        const networkProfileValue = document.getElementById('networkProfile').value;
+        
+        // Map network profile selection to NETWORK_PROFILES
+        let networkProfile;
+        switch (networkProfileValue) {
+            case 'high-speed':
+                networkProfile = NETWORK_PROFILES.HIGH_SPEED;
+                break;
+            case 'mobile-4g':
+                networkProfile = NETWORK_PROFILES.MOBILE_4G;
+                break;
+            case 'mobile-3g':
+                networkProfile = NETWORK_PROFILES.MOBILE_3G;
+                break;
+            case 'satellite':
+                networkProfile = NETWORK_PROFILES.SATELLITE;
+                break;
+            default:
+                networkProfile = NETWORK_PROFILES.HIGH_SPEED;
+        }
+
+        try {
+            const benchmark = new HandshakeBenchmark({
+                iterations: iterations,
+                warmupIterations: 1000,
+                networkProfile: networkProfile,
+                logCallback: (msg) => this.log(msg, 'info')
+            });
+
+            const results = await benchmark.runAll();
+
+            // Display results and download option
+            this.renderBenchmarkResults(results, benchmark);
+
+        } catch (error) {
+            this.log(`Benchmark error: ${error.message}`, 'error');
+            console.error('Benchmark error:', error);
+        }
+    }
+
+    renderBenchmarkResults(results, benchmark) {
+        const resultsContainer = document.createElement('div');
+        resultsContainer.className = 'benchmark-results-container';
+        resultsContainer.style.marginTop = '20px';
+        resultsContainer.style.padding = '20px';
+        resultsContainer.style.backgroundColor = '#f8f9fa';
+        resultsContainer.style.borderRadius = '8px';
+
+        const title = document.createElement('h3');
+        title.textContent = 'Benchmark Results Summary';
+        title.style.color = '#2ecc71';
+        title.style.marginBottom = '15px';
+        resultsContainer.appendChild(title);
+
+        const downloadButton = document.createElement('button');
+        downloadButton.textContent = 'Download Benchmark Results (JSON)';
+        downloadButton.className = 'primary-button';
+        downloadButton.style.marginTop = '10px';
+        downloadButton.addEventListener('click', () => {
+            const data = benchmark.exportResults();
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `pqc-benchmark-${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        });
+        resultsContainer.appendChild(downloadButton);
+
+        this.resultsElement.appendChild(resultsContainer);
     }
 
     getSimulationParameters() {
