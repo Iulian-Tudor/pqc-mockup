@@ -8,6 +8,9 @@
  * Emulates different network conditions:
  * - High-Speed/Local: No delay, unlimited bandwidth
  * - Mobile/4G: 50ms latency, 10 Mbps bandwidth, 10ms jitter
+ * - Mobile/3G: 100ms latency, 3 Mbps bandwidth, 25ms jitter
+ * - Satellite: 600ms latency, 1 Mbps bandwidth, 50ms jitter
+ * 
  */
 
 export const NETWORK_PROFILES = {

@@ -10,6 +10,8 @@ import { NetworkSimulator, NETWORK_PROFILES } from './NetworkSimulator.js';
  * This module implements two key exchange protocols:
  * 1. Hybrid Handshake (X25519 + Kyber-768)
  * 2. Pure PQC "2-KEM" (Mutual Kyber-768)
+ * 3. Hybrid "2-KEM" (X25519 + Mutual Kyber-768)
+ * 4. Pure ECDH (X25519 only)
  * 
  */
 export class HandshakeBenchmark {
