@@ -58,6 +58,42 @@ export class HandshakeBenchmark {
         }
     }
 
+    /**
+     * Compute descriptive statistics from an array of per-iteration timings.
+     * @param {number[]} times - Array of per-handshake durations in ms
+     * @returns {Object} - min, max, mean, median, p95, p99, stddev, cv, throughput
+     */
+    computeStats(times) {
+        const n = times.length;
+        if (n === 0) return {};
+
+        const sorted = times.slice().sort((a, b) => a - b);
+        const sum = times.reduce((acc, v) => acc + v, 0);
+        const mean = sum / n;
+
+        const variance = times.reduce((acc, v) => acc + (v - mean) ** 2, 0) / n;
+        const stddev = Math.sqrt(variance);
+        const cv = mean > 0 ? (stddev / mean) * 100 : 0; // coefficient of variation %
+
+        const percentile = (p) => {
+            const idx = (p / 100) * (n - 1);
+            const lo = Math.floor(idx);
+            const hi = Math.ceil(idx);
+            return lo === hi ? sorted[lo] : sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
+        };
+
+        return {
+            min:        { value: sorted[0],        unit: 'ms' },
+            max:        { value: sorted[n - 1],    unit: 'ms' },
+            median:     { value: percentile(50),   unit: 'ms' },
+            p95:        { value: percentile(95),   unit: 'ms' },
+            p99:        { value: percentile(99),   unit: 'ms' },
+            stddev:     { value: stddev,            unit: 'ms' },
+            cv:         { value: cv,                unit: '%'  },
+            throughput: { value: mean > 0 ? 1000 / mean : 0, unit: 'handshakes/s' }
+        };
+    }
+
     async loadNoblePostQuantum() {
         if (window.noblePostQuantum && window.noblePostQuantum.ml_kem768) {
             return window.noblePostQuantum.ml_kem768;
@@ -130,10 +166,19 @@ export class HandshakeBenchmark {
         let totalPayload1Size = 0;
         let totalPayload2Size = 0;
         let totalNetworkDelay = 0;
+        const iterationTimes = [];
+        const phaseKeygen = [];
+        const phaseScalarMult = [];
         
         for (let i = 0; i < this.iterations; i++) {
+            const t0 = performance.now();
             const result = await this.ecdhHandshakeOnce();
-            
+            const t1 = performance.now();
+
+            iterationTimes.push(t1 - t0);
+            phaseKeygen.push(result.phases.keygen);
+            phaseScalarMult.push(result.phases.scalarMult);
+
             const delay1 = await networkSim.simulateTransmission(result.payload1Size);
             const delay2 = await networkSim.simulateTransmission(result.payload2Size);
             
@@ -152,20 +197,31 @@ export class HandshakeBenchmark {
         
         const endTime = performance.now();
         const totalTime = endTime - startTime;
+        const stats = this.computeStats(iterationTimes);
         
         const results = {
             protocol: 'Pure ECDH (X25519)',
+            messageCount: 2,
             totalTime: { value: totalTime, unit: 'ms' },
             avgTimePerHandshake: { value: totalTime / this.iterations, unit: 'ms' },
             avgPayload1Size: { value: totalPayload1Size / this.iterations, unit: 'bytes' },
             avgPayload2Size: { value: totalPayload2Size / this.iterations, unit: 'bytes' },
             totalPayloadSize: { value: (totalPayload1Size + totalPayload2Size) / this.iterations, unit: 'bytes' },
             avgNetworkDelay: { value: totalNetworkDelay / this.iterations, unit: 'ms' },
-            iterations: this.iterations
+            iterations: this.iterations,
+            stats,
+            phases: {
+                keygen:     this.computeStats(phaseKeygen),
+                scalarMult: this.computeStats(phaseScalarMult)
+            },
+            // Security bits / total payload bytes  (X25519 ≈ 128 classical bits)
+            securityEfficiency: { value: 128 / ((totalPayload1Size + totalPayload2Size) / this.iterations), unit: 'bits/byte' }
         };
         
         this.logCallback(`Completed in ${(totalTime / 1000).toFixed(2)}s`);
-        this.logCallback(`  Avg time/handshake: ${results.avgTimePerHandshake.value.toFixed(4)}ms`);
+        this.logCallback(`  Avg time/handshake: ${results.avgTimePerHandshake.value.toFixed(4)}ms  (p95: ${stats.p95.value.toFixed(4)}ms, p99: ${stats.p99.value.toFixed(4)}ms)`);
+        this.logCallback(`  Throughput: ${stats.throughput.value.toFixed(1)} handshakes/s`);
+        this.logCallback(`  Stddev: ${stats.stddev.value.toFixed(4)}ms  CV: ${stats.cv.value.toFixed(2)}%`);
         this.logCallback(`  Avg payload size: ${results.totalPayloadSize.value.toFixed(0)} bytes`);
         this.logCallback(`  Avg network delay: ${results.avgNetworkDelay.value.toFixed(4)}ms`);
         
@@ -173,27 +229,33 @@ export class HandshakeBenchmark {
     }
 
     async ecdhHandshakeOnce() {
+        const t0 = performance.now();
         const aliceX25519 = this.nacl.box.keyPair();
-        
-        const payload1 = aliceX25519.publicKey; // 32 bytes
-        
         const bobX25519 = this.nacl.box.keyPair();
+        const t1 = performance.now();
+
+        const payload1 = aliceX25519.publicKey; // 32 bytes
+
+        const t2 = performance.now();
         const bobSharedSecret = this.nacl.scalarMult(
             bobX25519.secretKey,
             aliceX25519.publicKey
         );
-        
         const payload2 = bobX25519.publicKey; // 32 bytes
-        
         const aliceSharedSecret = this.nacl.scalarMult(
             aliceX25519.secretKey,
             bobX25519.publicKey
         );
+        const t3 = performance.now();
         
         return {
             payload1Size: payload1.length,
             payload2Size: payload2.length,
-            sharedSecret: aliceSharedSecret
+            sharedSecret: aliceSharedSecret,
+            phases: {
+                keygen:     t1 - t0,
+                scalarMult: t3 - t2
+            }
         };
     }
 
@@ -222,10 +284,21 @@ export class HandshakeBenchmark {
         let totalPayload1Size = 0;
         let totalPayload2Size = 0;
         let totalNetworkDelay = 0;
+        const iterationTimes = [];
+        const phaseKeygen = [];
+        const phaseEncap = [];
+        const phaseDecap = [];
         
         for (let i = 0; i < this.iterations; i++) {
+            const t0 = performance.now();
             const result = await this.hybridHandshakeOnce();
-            
+            const t1 = performance.now();
+
+            iterationTimes.push(t1 - t0);
+            phaseKeygen.push(result.phases.keygen);
+            phaseEncap.push(result.phases.encap);
+            phaseDecap.push(result.phases.decap);
+
             const delay1 = await networkSim.simulateTransmission(result.payload1Size);
             const delay2 = await networkSim.simulateTransmission(result.payload2Size);
             
@@ -245,20 +318,32 @@ export class HandshakeBenchmark {
         
         const endTime = performance.now();
         const totalTime = endTime - startTime;
+        const stats = this.computeStats(iterationTimes);
         
         const results = {
             protocol: 'Hybrid (X25519 + Kyber-768)',
+            messageCount: 2,
             totalTime: { value: totalTime, unit: 'ms' },
             avgTimePerHandshake: { value: totalTime / this.iterations, unit: 'ms' },
             avgPayload1Size: { value: totalPayload1Size / this.iterations, unit: 'bytes' },
             avgPayload2Size: { value: totalPayload2Size / this.iterations, unit: 'bytes' },
             totalPayloadSize: { value: (totalPayload1Size + totalPayload2Size) / this.iterations, unit: 'bytes' },
             avgNetworkDelay: { value: totalNetworkDelay / this.iterations, unit: 'ms' },
-            iterations: this.iterations
+            iterations: this.iterations,
+            stats,
+            phases: {
+                keygen: this.computeStats(phaseKeygen),
+                encap:  this.computeStats(phaseEncap),
+                decap:  this.computeStats(phaseDecap)
+            },
+            // X25519 ≈ 128 classical bits + Kyber-768 ≈ 178 post-quantum bits → NIST level 3
+            securityEfficiency: { value: 178 / ((totalPayload1Size + totalPayload2Size) / this.iterations), unit: 'bits/byte' }
         };
         
         this.logCallback(`Completed in ${(totalTime / 1000).toFixed(2)}s`);
-        this.logCallback(`  Avg time/handshake: ${results.avgTimePerHandshake.value.toFixed(4)}ms`);
+        this.logCallback(`  Avg time/handshake: ${results.avgTimePerHandshake.value.toFixed(4)}ms  (p95: ${stats.p95.value.toFixed(4)}ms, p99: ${stats.p99.value.toFixed(4)}ms)`);
+        this.logCallback(`  Throughput: ${stats.throughput.value.toFixed(1)} handshakes/s`);
+        this.logCallback(`  Stddev: ${stats.stddev.value.toFixed(4)}ms  CV: ${stats.cv.value.toFixed(2)}%`);
         this.logCallback(`  Avg payload size: ${results.totalPayloadSize.value.toFixed(0)} bytes`);
         this.logCallback(`  Avg network delay: ${results.avgNetworkDelay.value.toFixed(4)}ms`);
         
@@ -266,25 +351,26 @@ export class HandshakeBenchmark {
     }
 
     async hybridHandshakeOnce() {
-    
+        const t0 = performance.now();
         const aliceX25519 = this.nacl.box.keyPair();
-        
         const aliceKyberSeed = this.nacl.randomBytes(64);
         const aliceKyberKeys = this.kyber.keygen(aliceKyberSeed);
-        
+        const bobX25519 = this.nacl.box.keyPair();
+        const t1 = performance.now();
+
         const payload1 = new Uint8Array([
             ...aliceX25519.publicKey,      
             ...aliceKyberKeys.publicKey    
         ]);
         
-        const bobX25519 = this.nacl.box.keyPair();
-        
         const bobX25519Shared = this.nacl.scalarMult(
             bobX25519.secretKey,
             aliceX25519.publicKey
         );
-        
+
+        const t2 = performance.now();
         const kyberEncapsulated = this.kyber.encapsulate(aliceKyberKeys.publicKey);
+        const t3 = performance.now();
         
         const payload2 = new Uint8Array([
             ...bobX25519.publicKey,           // 32 bytes
@@ -295,11 +381,13 @@ export class HandshakeBenchmark {
             aliceX25519.secretKey,
             bobX25519.publicKey
         );
-        
+
+        const t4 = performance.now();
         const kyberSharedSecret = this.kyber.decapsulate(
             kyberEncapsulated.cipherText,
             aliceKyberKeys.secretKey
         );
+        const t5 = performance.now();
         
         const finalSharedSecret = new Uint8Array([
             ...aliceX25519Shared,
@@ -309,7 +397,12 @@ export class HandshakeBenchmark {
         return {
             payload1Size: payload1.length,
             payload2Size: payload2.length,
-            sharedSecret: finalSharedSecret
+            sharedSecret: finalSharedSecret,
+            phases: {
+                keygen: t1 - t0,
+                encap:  t3 - t2,
+                decap:  t5 - t4
+            }
         };
     }
 
@@ -340,10 +433,21 @@ export class HandshakeBenchmark {
         let totalPayload1Size = 0;
         let totalPayload2Size = 0;
         let totalNetworkDelay = 0;
+        const iterationTimes = [];
+        const phaseKeygen = [];
+        const phaseEncap = [];
+        const phaseDecap = [];
         
         for (let i = 0; i < this.iterations; i++) {
+            const t0 = performance.now();
             const result = await this.twoKEMHandshakeOnce();
-            
+            const t1 = performance.now();
+
+            iterationTimes.push(t1 - t0);
+            phaseKeygen.push(result.phases.keygen);
+            phaseEncap.push(result.phases.encap);
+            phaseDecap.push(result.phases.decap);
+
             const delay1 = await networkSim.simulateTransmission(result.payload1Size);
             const delay2 = await networkSim.simulateTransmission(result.payload2Size);
             
@@ -362,20 +466,32 @@ export class HandshakeBenchmark {
         
         const endTime = performance.now();
         const totalTime = endTime - startTime;
+        const stats = this.computeStats(iterationTimes);
         
         const results = {
             protocol: 'Pure PQC 2-KEM (Mutual Kyber-768)',
+            messageCount: 2,
             totalTime: { value: totalTime, unit: 'ms' },
             avgTimePerHandshake: { value: totalTime / this.iterations, unit: 'ms' },
             avgPayload1Size: { value: totalPayload1Size / this.iterations, unit: 'bytes' },
             avgPayload2Size: { value: totalPayload2Size / this.iterations, unit: 'bytes' },
             totalPayloadSize: { value: (totalPayload1Size + totalPayload2Size) / this.iterations, unit: 'bytes' },
             avgNetworkDelay: { value: totalNetworkDelay / this.iterations, unit: 'ms' },
-            iterations: this.iterations
+            iterations: this.iterations,
+            stats,
+            phases: {
+                keygen: this.computeStats(phaseKeygen),
+                encap:  this.computeStats(phaseEncap),
+                decap:  this.computeStats(phaseDecap)
+            },
+            // Kyber-768 ≈ 178 post-quantum bits (NIST level 3)
+            securityEfficiency: { value: 178 / ((totalPayload1Size + totalPayload2Size) / this.iterations), unit: 'bits/byte' }
         };
         
         this.logCallback(`Completed in ${(totalTime / 1000).toFixed(2)}s`);
-        this.logCallback(`  Avg time/handshake: ${results.avgTimePerHandshake.value.toFixed(4)}ms`);
+        this.logCallback(`  Avg time/handshake: ${results.avgTimePerHandshake.value.toFixed(4)}ms  (p95: ${stats.p95.value.toFixed(4)}ms, p99: ${stats.p99.value.toFixed(4)}ms)`);
+        this.logCallback(`  Throughput: ${stats.throughput.value.toFixed(1)} handshakes/s`);
+        this.logCallback(`  Stddev: ${stats.stddev.value.toFixed(4)}ms  CV: ${stats.cv.value.toFixed(2)}%`);
         this.logCallback(`  Avg payload size: ${results.totalPayloadSize.value.toFixed(0)} bytes`);
         this.logCallback(`  Avg network delay: ${results.avgNetworkDelay.value.toFixed(4)}ms`);
         
@@ -383,30 +499,31 @@ export class HandshakeBenchmark {
     }
 
     async twoKEMHandshakeOnce() {
+        const t0 = performance.now();
         const aliceSeed = this.nacl.randomBytes(64);
         const aliceKeys = this.kyber.keygen(aliceSeed);
-        
         const bobSeed = this.nacl.randomBytes(64);
         const bobKeys = this.kyber.keygen(bobSeed);
-        
+        const t1 = performance.now();
+
+        const t2 = performance.now();
         const aliceToBobEncap = this.kyber.encapsulate(bobKeys.publicKey);
-        
+        const bobToAliceEncap = this.kyber.encapsulate(aliceKeys.publicKey);
+        const t3 = performance.now();
 
         const payload1 = aliceToBobEncap.cipherText; // 1088 bytes for Kyber-768
-        
-        const bobToAliceEncap = this.kyber.encapsulate(aliceKeys.publicKey);
-        
         const payload2 = bobToAliceEncap.cipherText; // 1088 bytes for Kyber-768
-        
+
+        const t4 = performance.now();
         const bobDecapsulated = this.kyber.decapsulate(
             aliceToBobEncap.cipherText,
             bobKeys.secretKey
         );
-        
         const aliceDecapsulated = this.kyber.decapsulate(
             bobToAliceEncap.cipherText,
             aliceKeys.secretKey
         );
+        const t5 = performance.now();
         
         const combinedSecret = new Uint8Array([
             ...aliceDecapsulated,
@@ -416,7 +533,12 @@ export class HandshakeBenchmark {
         return {
             payload1Size: payload1.length,
             payload2Size: payload2.length,
-            sharedSecret: combinedSecret
+            sharedSecret: combinedSecret,
+            phases: {
+                keygen: t1 - t0,
+                encap:  t3 - t2,
+                decap:  t5 - t4
+            }
         };
     }
 
@@ -456,10 +578,21 @@ export class HandshakeBenchmark {
         let totalPayload2Size = 0;
         let totalPayload3Size = 0;
         let totalNetworkDelay = 0;
+        const iterationTimes = [];
+        const phaseKeygen = [];
+        const phaseEncap = [];
+        const phaseDecap = [];
         
         for (let i = 0; i < this.iterations; i++) {
+            const t0 = performance.now();
             const result = await this.hybrid2KEMHandshakeOnce();
-            
+            const t1 = performance.now();
+
+            iterationTimes.push(t1 - t0);
+            phaseKeygen.push(result.phases.keygen);
+            phaseEncap.push(result.phases.encap);
+            phaseDecap.push(result.phases.decap);
+
             const delay1 = await networkSim.simulateTransmission(result.payload1Size);
             const delay2 = await networkSim.simulateTransmission(result.payload2Size);
             const delay3 = await networkSim.simulateTransmission(result.payload3Size);
@@ -480,9 +613,11 @@ export class HandshakeBenchmark {
         
         const endTime = performance.now();
         const totalTime = endTime - startTime;
+        const stats = this.computeStats(iterationTimes);
         
         const results = {
             protocol: 'Hybrid 2-KEM (X25519 + Mutual Kyber-768)',
+            messageCount: 3,
             totalTime: { value: totalTime, unit: 'ms' },
             avgTimePerHandshake: { value: totalTime / this.iterations, unit: 'ms' },
             avgPayload1Size: { value: totalPayload1Size / this.iterations, unit: 'bytes' },
@@ -490,11 +625,21 @@ export class HandshakeBenchmark {
             avgPayload3Size: { value: totalPayload3Size / this.iterations, unit: 'bytes' },
             totalPayloadSize: { value: (totalPayload1Size + totalPayload2Size + totalPayload3Size) / this.iterations, unit: 'bytes' },
             avgNetworkDelay: { value: totalNetworkDelay / this.iterations, unit: 'ms' },
-            iterations: this.iterations
+            iterations: this.iterations,
+            stats,
+            phases: {
+                keygen: this.computeStats(phaseKeygen),
+                encap:  this.computeStats(phaseEncap),
+                decap:  this.computeStats(phaseDecap)
+            },
+            // X25519 + 2x Kyber-768: 178 PQC bits (dominant)
+            securityEfficiency: { value: 178 / ((totalPayload1Size + totalPayload2Size + totalPayload3Size) / this.iterations), unit: 'bits/byte' }
         };
         
         this.logCallback(`Completed in ${(totalTime / 1000).toFixed(2)}s`);
-        this.logCallback(`  Avg time/handshake: ${results.avgTimePerHandshake.value.toFixed(4)}ms`);
+        this.logCallback(`  Avg time/handshake: ${results.avgTimePerHandshake.value.toFixed(4)}ms  (p95: ${stats.p95.value.toFixed(4)}ms, p99: ${stats.p99.value.toFixed(4)}ms)`);
+        this.logCallback(`  Throughput: ${stats.throughput.value.toFixed(1)} handshakes/s`);
+        this.logCallback(`  Stddev: ${stats.stddev.value.toFixed(4)}ms  CV: ${stats.cv.value.toFixed(2)}%`);
         this.logCallback(`  Avg payload size: ${results.totalPayloadSize.value.toFixed(0)} bytes`);
         this.logCallback(`  Avg network delay: ${results.avgNetworkDelay.value.toFixed(4)}ms`);
         
@@ -502,15 +647,15 @@ export class HandshakeBenchmark {
     }
 
     async hybrid2KEMHandshakeOnce() {
-        // 1.
+        // 1. & 2. Keygen phase
+        const t0 = performance.now();
         const aliceX25519 = this.nacl.box.keyPair();
         const aliceSeed = this.nacl.randomBytes(64);
         const aliceKyberKeys = this.kyber.keygen(aliceSeed);
-        
-        // 2. 
         const bobX25519 = this.nacl.box.keyPair();
         const bobSeed = this.nacl.randomBytes(64);
         const bobKyberKeys = this.kyber.keygen(bobSeed);
+        const t1 = performance.now();
         
         // 3. 
         const payload1 = new Uint8Array([
@@ -518,7 +663,8 @@ export class HandshakeBenchmark {
             ...aliceKyberKeys.publicKey    // 1184 bytes for Kyber-768
         ]);
         
-        // 4. 
+        // 4. Encapsulation phase
+        const t2 = performance.now();
         const bobToAliceEncap = this.kyber.encapsulate(aliceKyberKeys.publicKey);
         const bobX25519Shared = this.nacl.scalarMult(
             bobX25519.secretKey,
@@ -532,12 +678,15 @@ export class HandshakeBenchmark {
             ...bobToAliceEncap.cipherText     // 1088 bytes
         ]);
         
-        // 6. 
         const aliceToBobEncap = this.kyber.encapsulate(bobKyberKeys.publicKey);
         const aliceX25519Shared = this.nacl.scalarMult(
             aliceX25519.secretKey,
             bobX25519.publicKey
         );
+        const t3 = performance.now();
+
+        // 6. & 8. Decapsulation phase
+        const t4 = performance.now();
         const aliceKyberShared = this.kyber.decapsulate(
             bobToAliceEncap.cipherText,
             aliceKyberKeys.secretKey
@@ -545,12 +694,12 @@ export class HandshakeBenchmark {
         
         // 7. 
         const payload3 = aliceToBobEncap.cipherText; // 1088 bytes
-        
-        // 8. 
+        // 8.
         const bobKyberShared = this.kyber.decapsulate(
             aliceToBobEncap.cipherText,
             bobKyberKeys.secretKey
         );
+        const t5 = performance.now();
         
         // 9. 
         const finalSharedSecret = new Uint8Array([
@@ -563,7 +712,12 @@ export class HandshakeBenchmark {
             payload1Size: payload1.length,
             payload2Size: payload2.length,
             payload3Size: payload3.length,
-            sharedSecret: finalSharedSecret
+            sharedSecret: finalSharedSecret,
+            phases: {
+                keygen: t1 - t0,
+                encap:  t3 - t2,
+                decap:  t5 - t4
+            }
         };
     }
 
@@ -573,22 +727,47 @@ export class HandshakeBenchmark {
         this.logCallback('╚═══════════════════════════════════════════════════════════════════╝');
         this.logCallback('');
         
-        const ecdh = this.results.ecdh;
-        const hybrid = this.results.hybrid;
-        const twoKEM = this.results.twoKEM;
+        const ecdh     = this.results.ecdh;
+        const hybrid   = this.results.hybrid;
+        const twoKEM   = this.results.twoKEM;
         const hybrid2KEM = this.results.hybrid2KEM;
-        
-        this.logCallback('TIME COMPLEXITY (Latency)');
+
+        const label = (r) => {
+            if (r === ecdh) return 'ECDH';
+            if (r === hybrid) return 'Hybrid';
+            if (r === twoKEM) return '2-KEM';
+            return 'Hybrid 2-KEM';
+        };
+
+        // ── TIME COMPLEXITY ──────────────────────────────────────────────
+        this.logCallback('TIME COMPLEXITY (Latency)  — avg / median / p95 / p99');
         this.logCallback('─────────────────────────────────────────────────────────────────');
-        this.logCallback(`  Pure ECDH (X25519):              ${ecdh.avgTimePerHandshake.value.toFixed(4)}ms per handshake`);
-        this.logCallback(`  Hybrid (X25519 + Kyber):         ${hybrid.avgTimePerHandshake.value.toFixed(4)}ms per handshake`);
-        this.logCallback(`  Pure PQC 2-KEM:                  ${twoKEM.avgTimePerHandshake.value.toFixed(4)}ms per handshake`);
-        this.logCallback(`  Hybrid 2-KEM (X25519 + 2xKyber): ${hybrid2KEM.avgTimePerHandshake.value.toFixed(4)}ms per handshake`);
-        
-        const fastest = Math.min(ecdh.avgTimePerHandshake.value, hybrid.avgTimePerHandshake.value, twoKEM.avgTimePerHandshake.value, hybrid2KEM.avgTimePerHandshake.value);
-        this.logCallback(`  Fastest: ${fastest === ecdh.avgTimePerHandshake.value ? 'ECDH' : fastest === hybrid.avgTimePerHandshake.value ? 'Hybrid' : fastest === twoKEM.avgTimePerHandshake.value ? '2-KEM' : 'Hybrid 2-KEM'}`);
+        for (const r of [ecdh, hybrid, twoKEM, hybrid2KEM]) {
+            const s = r.stats;
+            this.logCallback(`  ${r.protocol}`);
+            this.logCallback(`    avg: ${r.avgTimePerHandshake.value.toFixed(4)}ms  median: ${s.median.value.toFixed(4)}ms  p95: ${s.p95.value.toFixed(4)}ms  p99: ${s.p99.value.toFixed(4)}ms`);
+            this.logCallback(`    min: ${s.min.value.toFixed(4)}ms  max: ${s.max.value.toFixed(4)}ms  σ: ${s.stddev.value.toFixed(4)}ms  CV: ${s.cv.value.toFixed(2)}%`);
+            this.logCallback(`    throughput: ${s.throughput.value.toFixed(1)} handshakes/s  (${r.messageCount} message${r.messageCount > 1 ? 's' : ''})`);
+        }
+        const allAvg = [ecdh, hybrid, twoKEM, hybrid2KEM].map(r => r.avgTimePerHandshake.value);
+        const fastestAvg = Math.min(...allAvg);
+        const fastestR = [ecdh, hybrid, twoKEM, hybrid2KEM][allAvg.indexOf(fastestAvg)];
+        this.logCallback(`  Fastest: ${label(fastestR)} (${fastestAvg.toFixed(4)}ms avg)`);
         this.logCallback('');
-        
+
+        // ── PHASE BREAKDOWN ──────────────────────────────────────────────
+        this.logCallback('PHASE BREAKDOWN (avg time per operation)');
+        this.logCallback('─────────────────────────────────────────────────────────────────');
+        for (const r of [ecdh, hybrid, twoKEM, hybrid2KEM]) {
+            this.logCallback(`  ${r.protocol}`);
+            if (r.phases.keygen)     this.logCallback(`    keygen:     ${r.phases.keygen.throughput     ? (1000/r.phases.keygen.throughput.value).toFixed(4) : r.phases.keygen.median?.value.toFixed(4)}ms avg  (${r.phases.keygen.throughput?.value.toFixed(0)} ops/s)`);
+            if (r.phases.encap)      this.logCallback(`    encapsulate:${r.phases.encap.throughput      ? ' ' + (1000/r.phases.encap.throughput.value).toFixed(4) : ' ' + r.phases.encap.median?.value.toFixed(4)}ms avg  (${r.phases.encap.throughput?.value.toFixed(0)} ops/s)`);
+            if (r.phases.decap)      this.logCallback(`    decapsulate:${r.phases.decap.throughput      ? ' ' + (1000/r.phases.decap.throughput.value).toFixed(4) : ' ' + r.phases.decap.median?.value.toFixed(4)}ms avg  (${r.phases.decap.throughput?.value.toFixed(0)} ops/s)`);
+            if (r.phases.scalarMult) this.logCallback(`    scalarMult: ${r.phases.scalarMult.throughput  ? (1000/r.phases.scalarMult.throughput.value).toFixed(4) : r.phases.scalarMult.median?.value.toFixed(4)}ms avg  (${r.phases.scalarMult.throughput?.value.toFixed(0)} ops/s)`);
+        }
+        this.logCallback('');
+
+        // ── SPACE COMPLEXITY ─────────────────────────────────────────────
         this.logCallback('SPACE COMPLEXITY (Bandwidth)');
         this.logCallback('─────────────────────────────────────────────────────────────────');
         this.logCallback(`  Pure ECDH (X25519):`);
@@ -614,9 +793,22 @@ export class HandshakeBenchmark {
         this.logCallback('');
         
         const smallest = Math.min(ecdh.totalPayloadSize.value, hybrid.totalPayloadSize.value, twoKEM.totalPayloadSize.value, hybrid2KEM.totalPayloadSize.value);
-        this.logCallback(`  Most efficient: ${smallest === ecdh.totalPayloadSize.value ? 'ECDH' : smallest === hybrid.totalPayloadSize.value ? 'Hybrid' : smallest === twoKEM.totalPayloadSize.value ? '2-KEM' : 'Hybrid 2-KEM'} (${smallest.toFixed(0)} bytes)`);
+        const smallestR = [ecdh, hybrid, twoKEM, hybrid2KEM].find(r => r.totalPayloadSize.value === smallest);
+        this.logCallback(`  Most bandwidth-efficient: ${label(smallestR)} (${smallest.toFixed(0)} bytes)`);
         this.logCallback('');
-        
+
+        // ── SECURITY EFFICIENCY ──────────────────────────────────────────
+        this.logCallback('SECURITY EFFICIENCY (security bits / payload byte)');
+        this.logCallback('─────────────────────────────────────────────────────────────────');
+        for (const r of [ecdh, hybrid, twoKEM, hybrid2KEM]) {
+            this.logCallback(`  ${r.protocol.padEnd(42)} ${r.securityEfficiency.value.toFixed(4)} bits/byte`);
+        }
+        const bestSE = Math.max(...[ecdh, hybrid, twoKEM, hybrid2KEM].map(r => r.securityEfficiency.value));
+        const bestSER = [ecdh, hybrid, twoKEM, hybrid2KEM].find(r => r.securityEfficiency.value === bestSE);
+        this.logCallback(`  Best ratio: ${label(bestSER)} (${bestSE.toFixed(4)} bits/byte)`);
+        this.logCallback('');
+
+        // ── NETWORK IMPACT ───────────────────────────────────────────────
         if (this.networkProfile.latency > 0 || this.networkProfile.bandwidth < Infinity) {
             this.logCallback('NETWORK IMPACT');
             this.logCallback('─────────────────────────────────────────────────────────────────');
@@ -627,13 +819,15 @@ export class HandshakeBenchmark {
             this.logCallback(`  Hybrid 2-KEM network delay:  ${hybrid2KEM.avgNetworkDelay.value.toFixed(4)}ms`);
             
             const lowestNetworkDelay = Math.min(ecdh.avgNetworkDelay.value, hybrid.avgNetworkDelay.value, twoKEM.avgNetworkDelay.value, hybrid2KEM.avgNetworkDelay.value);
-            this.logCallback(`  Lowest network delay: ${lowestNetworkDelay === ecdh.avgNetworkDelay.value ? 'ECDH' : lowestNetworkDelay === hybrid.avgNetworkDelay.value ? 'Hybrid' : lowestNetworkDelay === twoKEM.avgNetworkDelay.value ? '2-KEM' : 'Hybrid 2-KEM'}`);
+            const lowestR = [ecdh, hybrid, twoKEM, hybrid2KEM].find(r => r.avgNetworkDelay.value === lowestNetworkDelay);
+            this.logCallback(`  Lowest network delay: ${label(lowestR)}`);
             this.logCallback('');
         }
         
-        const ecdhTotal = ecdh.avgTimePerHandshake.value + ecdh.avgNetworkDelay.value;
-        const hybridTotal = hybrid.avgTimePerHandshake.value + hybrid.avgNetworkDelay.value;
-        const twoKEMTotal = twoKEM.avgTimePerHandshake.value + twoKEM.avgNetworkDelay.value;
+        // ── TOTAL TIME (compute + network) ───────────────────────────────
+        const ecdhTotal     = ecdh.avgTimePerHandshake.value     + ecdh.avgNetworkDelay.value;
+        const hybridTotal   = hybrid.avgTimePerHandshake.value   + hybrid.avgNetworkDelay.value;
+        const twoKEMTotal   = twoKEM.avgTimePerHandshake.value   + twoKEM.avgNetworkDelay.value;
         const hybrid2KEMTotal = hybrid2KEM.avgTimePerHandshake.value + hybrid2KEM.avgNetworkDelay.value;
         
         this.logCallback('TOTAL TIME (Computation + Network)');
@@ -644,7 +838,8 @@ export class HandshakeBenchmark {
         this.logCallback(`  Hybrid 2-KEM:    ${hybrid2KEMTotal.toFixed(4)}ms`);
         
         const fastestTotal = Math.min(ecdhTotal, hybridTotal, twoKEMTotal, hybrid2KEMTotal);
-        this.logCallback(`  Winner: ${fastestTotal === ecdhTotal ? 'ECDH' : fastestTotal === hybridTotal ? 'Hybrid' : fastestTotal === twoKEMTotal ? '2-KEM' : 'Hybrid 2-KEM'} (${fastestTotal.toFixed(4)}ms)`);
+        const fastestTotalR = [ecdh, hybrid, twoKEM, hybrid2KEM][[ecdhTotal, hybridTotal, twoKEMTotal, hybrid2KEMTotal].indexOf(fastestTotal)];
+        this.logCallback(`  Winner: ${label(fastestTotalR)} (${fastestTotal.toFixed(4)}ms)`);
         this.logCallback('');
     }
 
@@ -659,14 +854,42 @@ export class HandshakeBenchmark {
                     bandwidth: this.networkProfile.bandwidth,
                     jitter: this.networkProfile.jitter
                 },
-                timestamp: new Date().toISOString()
+                timestamp: new Date().toISOString(),
+                userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'Node.js'
             },
             results: {
-                ecdh: this.results.ecdh,
-                hybrid: this.results.hybrid,
-                twoKEM: this.results.twoKEM,
+                ecdh:       this.results.ecdh,
+                hybrid:     this.results.hybrid,
+                twoKEM:     this.results.twoKEM,
                 hybrid2KEM: this.results.hybrid2KEM
-            }
+            },
+
+            summary: ['ecdh', 'hybrid', 'twoKEM', 'hybrid2KEM'].map(key => {
+                const r = this.results[key];
+                if (!r) return null;
+                return {
+                    protocol:          r.protocol,
+                    messageCount:      r.messageCount,
+                    avgMs:             r.avgTimePerHandshake.value,
+                    medianMs:          r.stats?.median?.value,
+                    p95Ms:             r.stats?.p95?.value,
+                    p99Ms:             r.stats?.p99?.value,
+                    minMs:             r.stats?.min?.value,
+                    maxMs:             r.stats?.max?.value,
+                    stddevMs:          r.stats?.stddev?.value,
+                    cvPct:             r.stats?.cv?.value,
+                    throughput:        r.stats?.throughput?.value,
+                    totalPayloadBytes: r.totalPayloadSize?.value,
+                    avgNetworkDelayMs: r.avgNetworkDelay?.value,
+                    securityEfficiency: r.securityEfficiency?.value,
+                    phases: r.phases ? {
+                        keygenAvgMs:     r.phases.keygen     ? (1000 / r.phases.keygen.throughput?.value)     : undefined,
+                        encapAvgMs:      r.phases.encap      ? (1000 / r.phases.encap.throughput?.value)      : undefined,
+                        decapAvgMs:      r.phases.decap      ? (1000 / r.phases.decap.throughput?.value)      : undefined,
+                        scalarMultAvgMs: r.phases.scalarMult ? (1000 / r.phases.scalarMult.throughput?.value) : undefined
+                    } : undefined
+                };
+            }).filter(Boolean)
         };
     }
 }
