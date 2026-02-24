@@ -363,12 +363,11 @@ export class HandshakeBenchmark {
             ...aliceKyberKeys.publicKey    
         ]);
         
+        const t2 = performance.now();
         const bobX25519Shared = this.nacl.scalarMult(
             bobX25519.secretKey,
             aliceX25519.publicKey
         );
-
-        const t2 = performance.now();
         const kyberEncapsulated = this.kyber.encapsulate(aliceKyberKeys.publicKey);
         const t3 = performance.now();
         
@@ -377,12 +376,11 @@ export class HandshakeBenchmark {
             ...kyberEncapsulated.cipherText   // 1088 bytes for Kyber-768
         ]);
         
+        const t4 = performance.now();
         const aliceX25519Shared = this.nacl.scalarMult(
             aliceX25519.secretKey,
             bobX25519.publicKey
         );
-
-        const t4 = performance.now();
         const kyberSharedSecret = this.kyber.decapsulate(
             kyberEncapsulated.cipherText,
             aliceKyberKeys.secretKey
@@ -405,7 +403,6 @@ export class HandshakeBenchmark {
             }
         };
     }
-
     /**2000
      * Protocol B: Pure PQC "2-KEM" (Mutual Kyber-768)
      * 
