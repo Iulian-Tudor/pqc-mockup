@@ -26,7 +26,7 @@ export class ModeSelector {
         const toggleButton = document.createElement('button');
         toggleButton.className = 'mode-toggle-button';
         toggleButton.setAttribute('aria-label', 'Toggle mode selector');
-        toggleButton.innerHTML = '⚙️';
+        toggleButton.textContent = '[M]';
         
         toggleButton.addEventListener('click', () => this.togglePanel());
         document.body.appendChild(toggleButton);
@@ -45,7 +45,7 @@ export class ModeSelector {
         const closeButton = document.createElement('button');
         closeButton.className = 'mode-panel-close';
         closeButton.setAttribute('aria-label', 'Close mode selector');
-        closeButton.innerHTML = '✕';
+        closeButton.textContent = 'X';
         closeButton.addEventListener('click', () => this.closePanel());
         header.appendChild(closeButton);
 
@@ -61,7 +61,7 @@ export class ModeSelector {
             
             const modeConfig = this.getModeConfig(mode);
             option.innerHTML = `
-                <div class="mode-option-icon">${modeConfig.icon}</div>
+                <div class="mode-option-label">${modeConfig.label}</div>
                 <div class="mode-option-content">
                     <div class="mode-option-title">${modeConfig.title}</div>
                     <div class="mode-option-description">${modeConfig.description}</div>
@@ -87,14 +87,14 @@ export class ModeSelector {
     getModeConfig(mode) {
         const configs = {
             [MODES.SIMULATION]: {
+                label: 'SIM',
                 title: 'Simulation Mode',
-                description: 'Multi-user document collaboration with various cryptographic schemes',
-                icon: '📊'
+                description: 'Multi-user document collaboration with various cryptographic schemes'
             },
             [MODES.BENCHMARK]: {
+                label: 'BENCH',
                 title: 'Benchmark Mode',
-                description: 'Performance testing of handshakes under different network conditions',
-                icon: '⚡'
+                description: 'Performance testing of handshakes under different network conditions'
             }
         };
         return configs[mode];

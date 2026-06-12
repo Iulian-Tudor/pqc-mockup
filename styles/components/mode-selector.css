@@ -14,7 +14,8 @@
     background-color: var(--primary);
     color: white;
     border: none;
-    font-size: 24px;
+    font-size: 16px;
+    font-weight: 600;
     cursor: pointer;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     transition: var(--transition);
@@ -29,7 +30,6 @@
 
 .mode-toggle-button.open {
     background-color: var(--primary-dark);
-    transform: rotate(45deg);
 }
 
 .mode-panel {
@@ -97,7 +97,8 @@
 .mode-panel-close {
     background: none;
     border: none;
-    font-size: 24px;
+    font-size: 20px;
+    font-weight: 600;
     cursor: pointer;
     color: #666;
     padding: 0;
@@ -111,7 +112,6 @@
 
 .mode-panel-close:hover {
     color: var(--primary);
-    transform: rotate(90deg);
 }
 
 .mode-options {
@@ -145,10 +145,17 @@
     box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
 }
 
-.mode-option-icon {
-    font-size: 32px;
+.mode-option-label {
+    font-size: 11px;
+    font-weight: 700;
+    background-color: var(--primary);
+    color: white;
+    padding: 6px 10px;
+    border-radius: 4px;
     flex-shrink: 0;
-    margin-top: 2px;
+    min-width: 50px;
+    text-align: center;
+    text-transform: uppercase;
 }
 
 .mode-option-content {
@@ -173,7 +180,7 @@
         right: 15px;
         width: 45px;
         height: 45px;
-        font-size: 20px;
+        font-size: 14px;
     }
 
     .mode-panel-content {
