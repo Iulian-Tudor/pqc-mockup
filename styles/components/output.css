@@ -1,0 +1,82 @@
+/*
+ * SPDX-FileCopyrightText: 2025 XWiki CryptPad Team <contact@cryptpad.org> and Iulian-Tudor Scutaru
+ *
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+#output {
+    margin-top: 30px;
+    background-color: white;
+    padding: 25px;
+    border-radius: var(--border-radius);
+    box-shadow: var(--box-shadow);
+}
+
+.output-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.output-header h2 {
+    margin: 0;
+    color: var(--primary);
+}
+
+.status-indicator {
+    padding: 6px 12px;
+    border-radius: 50px;
+    font-size: 14px;
+    font-weight: 500;
+    background-color: #f1f1f1;
+}
+
+.status-indicator.running {
+    background-color: var(--warning);
+    color: white;
+}
+
+.status-indicator.completed {
+    background-color: var(--success);
+    color: white;
+}
+
+.status-indicator.error {
+    background-color: var(--danger);
+    color: white;
+}
+
+.simulation-log {
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 14px;
+    line-height: 1.6;
+    background-color: #f8f9fa;
+    border-left: 4px solid var(--primary);
+    padding: 15px;
+    max-height: 250px;
+    overflow-y: auto;
+    margin-bottom: 25px;
+    white-space: pre-wrap;
+}
+
+.running-animation {
+    animation: pulse 1.5s infinite;
+}
+
+.results-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    justify-content: center;
+}
+
+.error-message {
+    color: #721c24;
+    background-color: #f8d7da;
+    border: 1px solid #f5c6cb;
+    padding: 10px;
+    border-radius: 4px;
+    margin: 10px 0;
+    text-align: center;
+}

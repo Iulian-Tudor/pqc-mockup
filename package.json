@@ -1,4 +1,5 @@
 {
+  "type": "module",
   "dependencies": {
     "@noble/post-quantum": "^0.4.0",
     "tweetnacl": "^1.0.3",

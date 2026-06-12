@@ -17,6 +17,8 @@ This project provides a comprehensive sandbox for experimenting with post-quantu
 - **Triple Cryptography Support**: Post-quantum (ML-KEM/ML-DSA), traditional (NaCl), and traditional (ElGamal+AES)
 - **Modular Algorithm Selection**: Choose from 3 ML-KEM variants (512, 768, 1024) and 3 ML-DSA variants (44, 65, 87)
 - **Universal Encryption Support**: All providers implement both mailbox and team encryption modes
+- **PQC Handshake Benchmark**: Compare Hybrid (X25519+Kyber-768) vs Pure PQC 2-KEM protocols
+- **Network Simulation**: Test performance under High-Speed, Mobile 4G/3G, and Satellite conditions
 - **Realistic Simulation**: Models collaborative document editing with configurable parameters
 - **Performance Analytics**: Collects and visualizes encryption, decryption, signing, and verification times
 - **Configurable Environment**: Easily modify user counts, document distribution, activity levels, and crypto variants
@@ -112,6 +114,27 @@ When running simulations:
 2. **Team-based encryption** reduces the number of encryption operations but may have higher initial overhead
 3. **All three providers** (PQC, NaCl, ElGamal) support both mailbox and team encryption modes
 4. For large simulations, consider increasing log frequency to reduce UI updates
+
+## PQC Handshake Benchmark 
+
+A robust benchmarking system for comparing Post-Quantum Key Exchange protocols:
+
+### Quick Start
+1. Check the "Run PQC Handshake Benchmark" box in the UI
+2. Select network profile (High-Speed, Mobile 4G, 3G, or Satellite)
+3. Click "Start Simulation"
+4. Download results as JSON
+
+### Protocols Tested
+- **Protocol A**: Hybrid Handshake (X25519 + Kyber-768)
+- **Protocol B**: Pure PQC 2-KEM (Mutual Kyber-768)
+
+### Features
+- 30,000 iterations with JIT warm-up
+- Network simulation (latency, bandwidth, jitter, packet loss)
+- Comprehensive metrics (time, space, network impact)
+- JSON export for dissertation analysis
+
 
 ## Implementation Details
 
