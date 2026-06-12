@@ -7,6 +7,7 @@ import { ChartRenderer } from './visualization/ChartRenderer.js';
 import { ENCRYPTOR_TYPES } from './utils/cryptoProvider.js';
 import { HandshakeBenchmark } from './benchmark/HandshakeBenchmark.js';
 import { NETWORK_PROFILES } from './benchmark/NetworkSimulator.js';
+import { ModeSelector, MODES } from './ModeSelector.js';
 
 class SimulationApp {
     constructor() {
@@ -18,38 +19,90 @@ class SimulationApp {
         this.statusIndicator = document.getElementById('status-indicator');
         this.cryptoSchemeSelect = document.getElementById('cryptoScheme');
         this.pqcOptionsContainer = document.getElementById('pqc-options');
-        this.enableBenchmarkCheckbox = document.getElementById('enableBenchmark');
-        this.benchmarkOptionsContainer = document.getElementById('benchmark-options');
+        this.benchmarkSection = document.getElementById('benchmark-section');
+        this.parametersSection = document.getElementById('parameters');
+        this.outputSection = document.getElementById('output');
 
         this.isRunning = false;
         this.simulationCount = 0;
+        this.currentMode = MODES.SIMULATION;
 
+        this.modeSelector = new ModeSelector((mode) => this.switchMode(mode));
         this.setupEventListeners();
-
-        this.togglePqcOptions();
-        this.toggleBenchmarkOptions();
     }
 
     setupEventListeners() {
         this.form.addEventListener('submit', (e) => this.handleSubmit(e));
         this.resetButton.addEventListener('click', () => this.resetResults());
         this.cryptoSchemeSelect.addEventListener('change', () => this.togglePqcOptions());
-        this.enableBenchmarkCheckbox.addEventListener('change', () => this.toggleBenchmarkOptions());
 
         const inputs = this.form.querySelectorAll('input[type="number"]');
         inputs.forEach(input => {
             input.addEventListener('input', () => this.validateInput(input));
         });
     }
-    
+
+    switchMode(mode) {
+        this.currentMode = mode;
+        this.updateUIForMode(mode);
+        this.resetResults();
+    }
+
+    updateUIForMode(mode) {
+        if (mode === MODES.SIMULATION) {
+            this.enableSimulationUI();
+        } else if (mode === MODES.BENCHMARK) {
+            this.enableBenchmarkUI();
+        }
+    }
+
+    enableSimulationUI() {
+        this.parametersSection.classList.remove('benchmark-mode');
+        this.parametersSection.classList.add('simulation-mode');
+
+        const paramGrid = this.parametersSection.querySelector('.parameter-grid');
+        const distCheckbox = Array.from(this.parametersSection.querySelectorAll('.parameter-checkbox'))
+            .find(el => el.querySelector('#useDistribution'));
+        const encryptorItem = Array.from(this.parametersSection.querySelectorAll('.parameter-item'))
+            .find(el => el.querySelector('#encryptorType'));
+        const cryptoItem = Array.from(this.parametersSection.querySelectorAll('.parameter-item'))
+            .find(el => el.querySelector('#cryptoScheme'));
+        
+        if (paramGrid) paramGrid.style.display = 'grid';
+        if (distCheckbox) distCheckbox.style.display = 'flex';
+        if (encryptorItem) encryptorItem.style.display = 'block';
+        if (cryptoItem) cryptoItem.style.display = 'block';
+        this.pqcOptionsContainer.style.display = this.cryptoSchemeSelect.value === 'pqc' ? 'block' : 'none';
+        this.benchmarkSection.style.display = 'none';
+
+        this.startButton.textContent = 'Start Simulation';
+    }
+
+    enableBenchmarkUI() {
+        this.parametersSection.classList.remove('simulation-mode');
+        this.parametersSection.classList.add('benchmark-mode');
+
+        const paramGrid = this.parametersSection.querySelector('.parameter-grid');
+        const distCheckbox = Array.from(this.parametersSection.querySelectorAll('.parameter-checkbox'))
+            .find(el => el.querySelector('#useDistribution'));
+        const encryptorItem = Array.from(this.parametersSection.querySelectorAll('.parameter-item'))
+            .find(el => el.querySelector('#encryptorType'));
+        const cryptoItem = Array.from(this.parametersSection.querySelectorAll('.parameter-item'))
+            .find(el => el.querySelector('#cryptoScheme'));
+
+        if (paramGrid) paramGrid.style.display = 'none';
+        if (distCheckbox) distCheckbox.style.display = 'none';
+        if (encryptorItem) encryptorItem.style.display = 'none';
+        if (cryptoItem) cryptoItem.style.display = 'none';
+        this.pqcOptionsContainer.style.display = 'none';
+        this.benchmarkSection.style.display = 'block';
+
+        this.startButton.textContent = 'Run Benchmark';
+    }
+
     togglePqcOptions() {
         const showPqcOptions = this.cryptoSchemeSelect.value === 'pqc';
         this.pqcOptionsContainer.style.display = showPqcOptions ? 'block' : 'none';
-    }
-
-    toggleBenchmarkOptions() {
-        const showBenchmarkOptions = this.enableBenchmarkCheckbox.checked;
-        this.benchmarkOptionsContainer.style.display = showBenchmarkOptions ? 'block' : 'none';
     }
 
     validateInput(input) {
@@ -65,11 +118,9 @@ class SimulationApp {
     }
 
     renderVisualizations(analysisData) {
-        // Create container for visualizations
         const vizContainer = document.createElement('div');
         vizContainer.className = 'visualization-container';
 
-        // Create section for JSON download
         const downloadSection = document.createElement('div');
         downloadSection.className = 'download-section';
 
@@ -93,7 +144,6 @@ class SimulationApp {
         downloadSection.appendChild(downloadButton);
         vizContainer.appendChild(downloadSection);
 
-        // Create sections for each chart
         const charts = [
             { id: 'edit-distribution', title: 'Edit Distribution Curve', renderer: 'renderEditDistribution' },
             { id: 'user-document-network', title: 'User-Document Network Graph', renderer: 'renderUserDocumentNetwork' },
@@ -119,7 +169,6 @@ class SimulationApp {
 
         this.resultsElement.appendChild(vizContainer);
 
-        // Initialize the chart renderer and render all charts
         const chartRenderer = new ChartRenderer(analysisData);
         charts.forEach(chart => {
             chartRenderer[chart.renderer](chart.id);
@@ -136,14 +185,9 @@ class SimulationApp {
             this.simulationCount++;
             this.updateUIState('running');
 
-            // Check if benchmark mode is enabled
-            const enableBenchmark = document.getElementById('enableBenchmark').checked;
-
-            if (enableBenchmark) {
-                // Run PQC Handshake Benchmark
+            if (this.currentMode === MODES.BENCHMARK) {
                 await this.runBenchmark();
             } else {
-                // Run normal simulation
                 const params = this.getSimulationParameters();
                 this.log(`Using crypto scheme: ${params.cryptoScheme}`, 'info');
 
@@ -181,11 +225,9 @@ class SimulationApp {
         this.log('This will compare Hybrid (X25519+Kyber-768) vs Pure PQC 2-KEM protocols', 'info');
         this.log('', 'info');
 
-        // Get benchmark parameters
         const iterations = parseInt(document.getElementById('benchmarkIterations').value) || 30000;
         const networkProfileValue = document.getElementById('networkProfile').value;
         
-        // Map network profile selection to NETWORK_PROFILES
         let networkProfile;
         switch (networkProfileValue) {
             case 'high-speed':
@@ -214,7 +256,6 @@ class SimulationApp {
 
             const results = await benchmark.runAll();
 
-            // Display results and download option
             this.renderBenchmarkResults(results, benchmark);
 
         } catch (error) {
@@ -286,16 +327,16 @@ class SimulationApp {
 
         switch (state) {
             case 'running':
-                this.startButton.textContent = 'Running...';
+                this.startButton.textContent = this.currentMode === MODES.BENCHMARK ? 'Running Benchmark...' : 'Running...';
                 break;
             case 'completed':
-                this.startButton.textContent = 'Run Again';
+                this.startButton.textContent = this.currentMode === MODES.BENCHMARK ? 'Run Again' : 'Run Again';
                 break;
             case 'error':
                 this.startButton.textContent = 'Try Again';
                 break;
             default:
-                this.startButton.textContent = 'Start Simulation';
+                this.startButton.textContent = this.currentMode === MODES.BENCHMARK ? 'Run Benchmark' : 'Start Simulation';
         }
 
         this.statusIndicator.textContent = state.charAt(0).toUpperCase() + state.slice(1);
@@ -339,7 +380,7 @@ class SimulationApp {
         }
 
         this.resetLog();
-        this.log('Results cleared. Ready for a new simulation.');
+        this.log('Results cleared. Ready for a new ' + (this.currentMode === MODES.BENCHMARK ? 'benchmark.' : 'simulation.'));
         this.updateUIState('ready');
     }
 }
@@ -347,4 +388,3 @@ class SimulationApp {
 document.addEventListener('DOMContentLoaded', () => {
     window.app = new SimulationApp();
 });
-

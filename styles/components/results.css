@@ -1,0 +1,167 @@
+/*
+ * SPDX-FileCopyrightText: 2025 XWiki CryptPad Team <contact@cryptpad.org> and Iulian-Tudor Scutaru
+ *
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+.visualization-container {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 30px;
+    margin-top: 30px;
+}
+
+.chart-section {
+    background-color: white;
+    border-radius: var(--border-radius);
+    padding: 20px;
+    box-shadow: var(--box-shadow);
+}
+
+.chart-section h3 {
+    color: var(--primary);
+    margin-top: 0;
+    margin-bottom: 15px;
+    text-align: center;
+}
+
+.chart-container {
+    width: 100%;
+    position: relative;
+}
+
+.chart-wrapper {
+    position: relative;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.download-section {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 20px;
+}
+
+.download-button {
+    margin-top: 10px;
+    background-color: #f8f9fa;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 6px 12px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s ease;
+}
+
+.download-button:hover {
+    background-color: #e9ecef;
+    border-color: #ced4da;
+}
+
+.download-json {
+    min-width: 250px;
+}
+
+.section-heading {
+    text-align: center;
+    margin: 40px 0 25px;
+    width: 100%;
+}
+
+.section-heading h2 {
+    display: inline-block;
+    color: var(--primary);
+    padding: 0 20px 10px;
+    border-bottom: 3px solid var(--primary);
+    margin: 0;
+}
+
+.cards-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    justify-content: center;
+    width: 100%;
+}
+
+.doc-card, .user-card {
+    background-color: #f8f9fa;
+    border-radius: var(--border-radius);
+    padding: 15px;
+    width: calc(25% - 20px);
+    min-width: 200px;
+    transition: var(--transition);
+    border-top: 4px solid var(--primary);
+}
+
+.doc-card:hover, .user-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+}
+
+.doc-card h3, .user-card h3 {
+    margin-top: 0;
+    text-align: center;
+    color: var(--primary);
+    border-bottom: 1px solid #ddd;
+    padding-bottom: 8px;
+    margin-bottom: 15px;
+}
+
+.stat-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.stat-label {
+    font-weight: 500;
+    color: #666;
+}
+
+.stat-value {
+    font-weight: 600;
+}
+
+.summary-container {
+    width: 100%;
+    margin-top: 30px;
+    background-color: #f8f9fa;
+    padding: 20px;
+    border-radius: var(--border-radius);
+    border-top: 4px solid var(--primary);
+}
+
+.variant-info-section {
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: var(--border-radius);
+    padding: 20px;
+    margin-bottom: 25px;
+}
+
+.variant-info-section h3 {
+    margin: 0 0 15px 0;
+    color: var(--primary);
+    font-size: 16px;
+}
+
+.variant-details p {
+    margin: 8px 0;
+    font-size: 14px;
+    color: var(--dark);
+}
+
+.variant-details strong {
+    color: var(--primary-dark);
+    font-weight: 600;
+}
+
+@media (max-width: 768px) {
+    .summary-container > div {
+        grid-template-columns: 1fr !important;
+    }
+}

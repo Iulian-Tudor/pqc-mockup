@@ -4,13 +4,13 @@
 
 /**
  * Network Simulator for benchmarking
- * 
+ *
  * Emulates different network conditions:
  * - High-Speed/Local: No delay, unlimited bandwidth
  * - Mobile/4G: 50ms latency, 10 Mbps bandwidth, 10ms jitter
  * - Mobile/3G: 100ms latency, 3 Mbps bandwidth, 25ms jitter
  * - Satellite: 600ms latency, 1 Mbps bandwidth, 50ms jitter
- * 
+ *
  */
 
 export const NETWORK_PROFILES = {
@@ -62,8 +62,8 @@ export class NetworkSimulator {
         }
 
         // Calculate transmission time based on bandwidth
-        const transmissionTime = this.profile.bandwidth === Infinity 
-            ? 0 
+        const transmissionTime = this.profile.bandwidth === Infinity
+            ? 0
             : payloadSize / this.profile.bandwidth;
 
         // Add base latency
@@ -89,7 +89,7 @@ export class NetworkSimulator {
         // The calculated delay is still tracked for network impact analysis
         return totalDelay;
     }
-    
+
     sleep(ms) {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
@@ -98,7 +98,7 @@ export class NetworkSimulator {
         if (this.profile.bandwidth === Infinity) {
             return this.profile.latency;
         }
-        
+
         const transmissionTime = payloadSize / this.profile.bandwidth;
         return this.profile.latency + transmissionTime;
     }
@@ -107,8 +107,8 @@ export class NetworkSimulator {
         return {
             name: this.profile.name,
             latency: this.profile.latency,
-            bandwidth: this.profile.bandwidth === Infinity 
-                ? '∞' 
+            bandwidth: this.profile.bandwidth === Infinity
+                ? '∞'
                 : `${(this.profile.bandwidth * 8 / 1000).toFixed(2)} Mbps`,
             jitter: this.profile.jitter,
             packetLoss: `${(this.profile.packetLoss * 100).toFixed(2)}%`
@@ -119,12 +119,12 @@ export class NetworkSimulator {
 export function compareNetworkProfiles(payloadSize = 2000) {
     console.log('\n=== Network Profile Comparison ===');
     console.log(`Payload Size: ${payloadSize} bytes\n`);
-    
+
     Object.values(NETWORK_PROFILES).forEach(profile => {
         const sim = new NetworkSimulator(profile);
         const time = sim.calculateTransmissionTime(payloadSize);
         const info = sim.getProfileInfo();
-        
+
         console.log(`${info.name}:`);
         console.log(`  Base Latency: ${info.latency}ms`);
         console.log(`  Bandwidth: ${info.bandwidth}`);

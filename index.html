@@ -10,7 +10,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CryptPad Post-Quantum Mockup</title>
-    <link rel="stylesheet" href="styles/styles.css">
+    <link rel="stylesheet" href="styles/global.css">
+    <link rel="stylesheet" href="styles/components/parameters.css">
+    <link rel="stylesheet" href="styles/components/buttons.css">
+    <link rel="stylesheet" href="styles/components/output.css">
+    <link rel="stylesheet" href="styles/components/results.css">
+    <link rel="stylesheet" href="styles/components/mode-selector.css">
     <script type="module" src="https://cdn.jsdelivr.net/npm/@noble/post-quantum/ml-kem/+esm"></script>
     <script type="module" src="https://cdn.jsdelivr.net/npm/@noble/post-quantum/ml-dsa/+esm"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tweetnacl/1.0.3/nacl-fast.min.js"></script>
@@ -22,7 +27,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <body>
 <header>
     <h1>CryptPad Post-Quantum Cryptography Simulation</h1>
-    <p class="description">This simulation demonstrates post-quantum cryptography with modular ML-KEM and ML-DSA variants, supporting multiple users and encryption modes.</p>
+    <p class="description">This simulation demonstrates post-quantum cryptography with modular ML-KEM and ML-DSA variants, supporting multiple users and encryption modes. Classical cryptography is also supported for comparison.</p>
 </header>
 
 <main>
@@ -100,34 +105,28 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <span class="input-hint">Mailbox for chat, Team for document editing</span>
             </div>
 
-            <div class="parameter-separator"></div>
-            
-            <div class="parameter-section-title">PQC Handshake Benchmark (Dissertation Mode)</div>
-            
-            <div class="parameter-checkbox">
-                <input type="checkbox" id="enableBenchmark" aria-describedby="benchmark-desc">
-                <label for="enableBenchmark">Run PQC Handshake Benchmark</label>
-                <p id="benchmark-desc" class="checkbox-description">
-                    Compare 4 protocols: Pure ECDH vs Hybrid (ECDH+Kyber) vs Pure 2-KEM vs Hybrid 2-KEM (ECDH+2×Kyber)
-                </p>
-            </div>
+            <div class="benchmark-section" id="benchmark-section" style="display: none;">
+                <div class="parameter-separator"></div>
 
-            <div class="benchmark-options" id="benchmark-options" style="display: none;">
-                <div class="parameter-item">
-                    <label for="benchmarkIterations">Benchmark Iterations:</label>
-                    <input type="number" id="benchmarkIterations" min="1000" max="100000" value="30000" required>
-                    <span class="input-hint">Default: 30,000 (with 1,000 warm-up)</span>
-                </div>
+                <div class="parameter-section-title">PQC Handshake Benchmark (Hybridisation through Networks)</div>
 
-                <div class="parameter-item">
-                    <label for="networkProfile">Network Profile:</label>
-                    <select id="networkProfile" name="networkProfile">
-                        <option value="high-speed" selected>High-Speed / Local (No delay)</option>
-                        <option value="mobile-4g">Mobile / 4G (50ms latency, 10 Mbps)</option>
-                        <option value="mobile-3g">Mobile / 3G (100ms latency, 3 Mbps)</option>
-                        <option value="satellite">Satellite (600ms latency, 1 Mbps)</option>
-                    </select>
-                    <span class="input-hint">Test network impact on handshake performance</span>
+                <div class="benchmark-options">
+                    <div class="parameter-item">
+                        <label for="benchmarkIterations">Benchmark Iterations:</label>
+                        <input type="number" id="benchmarkIterations" min="1000" max="100000" value="30000" required>
+                        <span class="input-hint">Default: 30,000 (with 1,000 warm-up)</span>
+                    </div>
+
+                    <div class="parameter-item">
+                        <label for="networkProfile">Network Profile:</label>
+                        <select id="networkProfile" name="networkProfile">
+                            <option value="high-speed" selected>High-Speed / Local (No delay)</option>
+                            <option value="mobile-4g">Mobile / 4G (50ms latency, 10 Mbps)</option>
+                            <option value="mobile-3g">Mobile / 3G (100ms latency, 3 Mbps)</option>
+                            <option value="satellite">Satellite (600ms latency, 1 Mbps)</option>
+                        </select>
+                        <span class="input-hint">Test network impact on handshake performance</span>
+                    </div>
                 </div>
             </div>
 

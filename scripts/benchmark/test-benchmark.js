@@ -5,7 +5,7 @@
 /**
  * Test script for PQC Handshake Benchmark
  * Run this in Node.js to verify the benchmark works correctly
- * 
+ *
  * Usage: node test-benchmark.js
  */
 
@@ -16,8 +16,8 @@ async function runTest() {
     console.log('Testing PQC Handshake Benchmark\n');
 
     const benchmark = new HandshakeBenchmark({
-        iterations: 100,          
-        warmupIterations: 10,    
+        iterations: 100,
+        warmupIterations: 10,
         networkProfile: NETWORK_PROFILES.HIGH_SPEED,
         logCallback: (msg) => console.log(msg)
     });
